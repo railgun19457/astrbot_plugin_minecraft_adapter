@@ -17,17 +17,10 @@
 
 ### Minecraft 服务器端
 
-1. **服务器核心**: Paper, Spigot, Leaf 等主流插件服核心
+1. **服务器核心**: Paper, Spigot等主流插件服核心
 2. **Minecraft 版本**: 1.20.x 或 1.21.x
 3. **Java 版本**: 17+
 4. **AstrBot Adapter 插件**: 从 [GitHub Releases](https://github.com/railgun19457/AstrBotAdapter/releases) 下载并安装到 Minecraft 服务器
-
-### AstrBot 端
-
-1. **Python**: 3.10+
-2. **依赖库**: 
-   - `websockets` - WebSocket 客户端
-   - `aiohttp` - 异步 HTTP 客户端
 
 ## 安装步骤
 
@@ -60,8 +53,6 @@ rest-api:
 
 ### 3. 安装 AstrBot 插件
 
-1. 将本插件文件夹放入 AstrBot 的 `data/plugins/` 目录
-2. 重启 AstrBot 或重新加载插件
 
 ### 4. 配置 AstrBot 插件
 
@@ -73,8 +64,8 @@ rest-api:
 - **WebSocket Token**: 从 Minecraft 服务器配置文件中获取
 - **REST API 服务器地址**: 填写 Minecraft 服务器的 IP 地址
 - **REST API 服务器端口**: 默认 8766
-- **REST API Token**: 从 Minecraft 服务器配置文件中获取（通常与 WebSocket Token 相同）
-- **消息转发目标会话**: 填写要转发 Minecraft 消息的目标会话 ID（可选，格式见下文）
+- **REST API Token**: 从 Minecraft 服务器配置文件中获取
+- **消息转发目标会话**: 填写要转发 Minecraft 消息的目标会话 ID（使用/sid指令获取）
 
 #### 配置消息转发目标
 
@@ -82,10 +73,7 @@ rest-api:
 
 格式：`platform_name:message_type:session_id`
 
-示例：
-- QQ 群：`aiocqhttp:group:123456789`
-- Telegram 群组：`telegram_bot:group:-1001234567890`
-- 私聊：`aiocqhttp:private:987654321`
+可通过`sid`指令获取
 
 支持配置多个目标，每行一个：
 ```
@@ -161,52 +149,6 @@ aiocqhttp:group:987654321
 | `mc_command_prefix` | string | /mc | Minecraft 指令前缀 |
 | `admin_only` | bool | false | 是否仅管理员可用 |
 
-## 常见问题
-
-### 1. 连接失败
-
-**问题**: 插件显示 "WebSocket 连接错误"
-
-**解决方法**:
-- 检查 Minecraft 服务器是否运行
-- 检查防火墙是否开放 8765 和 8766 端口
-- 确认 IP 地址和端口配置正确
-- 查看 Minecraft 服务器日志确认插件是否正常运行
-
-### 2. 认证失败
-
-**问题**: 插件显示 "认证失败，请检查 Token"
-
-**解决方法**:
-- 确认 Token 与 Minecraft 服务器配置文件中的 Token 一致
-- Token 区分大小写，请仔细核对
-- 可以在 Minecraft 服务器控制台执行 `/astrbot reload` 查看 Token
-
-### 3. 消息转发不工作
-
-**问题**: Minecraft 聊天消息没有转发到 AstrBot
-
-**解决方法**:
-- 确认 `forward_chat_to_astrbot` 配置为 true
-- 检查 WebSocket 连接是否正常（查看日志中是否有 "认证成功" 消息）
-- 目前消息转发功能需要进一步开发，请参考代码中的 TODO 注释
-
-### 4. 无法执行指令
-
-**问题**: 执行 `/mc cmd` 指令没有效果
-
-**解决方法**:
-- 检查是否有管理员权限（如果 `admin_only` 为 true）
-- 确认 WebSocket 连接状态正常
-- 指令不需要包含斜杠，例如使用 `/mc cmd say Hello` 而不是 `/mc cmd /say Hello`
-
-## 安全建议
-
-1. **使用强 Token** - 使用至少 32 个字符的随机字符串作为认证 Token
-2. **限制访问** - 在 Minecraft 服务器配置中，将 `host` 设置为 `127.0.0.1` 以限制只能本地访问
-3. **使用 VPN** - 如果 AstrBot 和 Minecraft 服务器不在同一台机器上，建议使用 VPN 连接
-4. **定期更换 Token** - 定期更换认证 Token 以提高安全性
-5. **启用管理员限制** - 将 `admin_only` 设置为 true，限制只有管理员才能使用
 
 ## 开发信息
 

@@ -1,0 +1,85 @@
+{
+  "enabled": {
+    "type": "bool",
+    "description": "启用 Minecraft 适配器",
+    "default": false
+  },
+  "websocket_host": {
+    "type": "string",
+    "description": "WebSocket 服务器地址",
+    "default": "localhost"
+  },
+  "websocket_port": {
+    "type": "int",
+    "description": "WebSocket 服务器端口",
+    "default": 8765
+  },
+  "websocket_token": {
+    "type": "string",
+    "description": "WebSocket 认证 Token",
+    "hint": "从 Minecraft 服务器插件配置中获取",
+    "default": ""
+  },
+  "rest_api_host": {
+    "type": "string",
+    "description": "REST API 服务器地址",
+    "default": "localhost"
+  },
+  "rest_api_port": {
+    "type": "int",
+    "description": "REST API 服务器端口",
+    "default": 8766
+  },
+  "rest_api_token": {
+    "type": "string",
+    "description": "REST API 认证 Token",
+    "hint": "从 Minecraft 服务器插件配置中获取",
+    "default": ""
+  },
+  "auto_reconnect": {
+    "type": "bool",
+    "description": "自动重连",
+    "hint": "连接断开后自动尝试重新连接",
+    "default": true
+  },
+  "reconnect_interval": {
+    "type": "int",
+    "description": "重连间隔(秒)",
+    "default": 5
+  },
+  "forward_chat_to_astrbot": {
+    "type": "bool",
+    "description": "转发聊天消息到 AstrBot",
+    "hint": "将 Minecraft 玩家聊天消息转发到 AstrBot",
+    "default": true
+  },
+  "forward_join_leave_to_astrbot": {
+    "type": "bool",
+    "description": "转发玩家进出消息",
+    "hint": "将玩家加入/离开消息转发到 AstrBot",
+    "default": true
+  },
+  "forward_target_session": {
+    "type": "text",
+    "description": "消息转发目标会话",
+    "hint": "格式: platform_name:message_type:session_id，例如 aiocqhttp:group:123456789。留空则不转发。可以填写多个，每行一个。",
+    "default": ""
+  },
+  "status_check_interval": {
+    "type": "int",
+    "description": "状态检查间隔(秒)",
+    "hint": "定期检查服务器状态的时间间隔，设为 0 禁用",
+    "default": 300
+  },
+  "mc_command_prefix": {
+    "type": "string",
+    "description": "Minecraft 指令前缀",
+    "default": "/mc"
+  },
+  "admin_only": {
+    "type": "bool",
+    "description": "仅管理员可用",
+    "hint": "是否限制只有管理员才能使用 Minecraft 指令",
+    "default": false
+  }
+}

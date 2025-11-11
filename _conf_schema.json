@@ -60,10 +60,10 @@
     "default": true
   },
   "forward_target_session": {
-    "type": "text",
+    "type": "list",
     "description": "消息转发目标会话",
-    "hint": "格式: platform_name:message_type:session_id，例如 aiocqhttp:group:123456789。留空则不转发。可以填写多个，每行一个。",
-    "default": ""
+    "hint": "格式: platform_name:message_type:session_id，例如 aiocqhttp:group:123456789。留空则不转发。",
+    "default": []
   },
   "status_check_interval": {
     "type": "int",
@@ -71,15 +71,16 @@
     "hint": "定期检查服务器状态的时间间隔，设为 0 禁用",
     "default": 300
   },
-  "mc_command_prefix": {
+  "auto_forward_prefix": {
     "type": "string",
-    "description": "Minecraft 指令前缀",
-    "default": "/mc"
+    "description": "自动转发消息前缀",
+    "hint": "用户消息以此前缀开头时自动转发到 Minecraft 服务器（例如: #mc）。留空则禁用此功能。",
+    "default": ""
   },
-  "admin_only": {
-    "type": "bool",
-    "description": "仅管理员可用",
-    "hint": "是否限制只有管理员才能使用 Minecraft 指令",
-    "default": false
+  "auto_forward_sessions": {
+    "type": "list",
+    "description": "自动转发监听的会话",
+    "hint": "格式: platform_name:message_type:session_id，例如 aiocqhttp:group:123456789。留空则监听所有会话。",
+    "default": []
   }
 }

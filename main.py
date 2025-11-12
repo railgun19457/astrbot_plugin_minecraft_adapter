@@ -9,6 +9,7 @@ import asyncio
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
+from astrbot.api.platform import AstrBotMessage, MessageType
 from astrbot.api.star import Context, Star
 
 from .config import MinecraftAdapterConfig
@@ -31,6 +32,9 @@ class MinecraftAdapter(Star):
         self.rest_client = RestApiClient(self.config)
         self.formatter = MessageFormatter()
         self.status_task: asyncio.Task | None = None
+
+        # MC 群聊会话 ID（固定格式）
+        self.mc_group_session_id = "minecraft:group:server"
 
         # 注册消息处理器
         self._register_ws_handlers()
@@ -69,6 +73,16 @@ class MinecraftAdapter(Star):
                 f"[MC适配器] 消息转发目标: {len(self.config.forward_target_session)} 个"
             )
 
+        if self.config.enable_ai_chat:
+            if self.config.ai_chat_prefix:
+                logger.info(
+                    f"[MC适配器] AI 对话已启用 | 触发前缀: '{self.config.ai_chat_prefix}'"
+                )
+            else:
+                logger.info("[MC适配器] AI 对话已启用 | 所有消息都会触发 AI")
+        else:
+            logger.info("[MC适配器] AI 对话功能已禁用")
+
     async def _start(self):
         """启动插件"""
         logger.info(f"[MC适配器] 启动插件实例: {id(self)}")
@@ -90,14 +104,54 @@ class MinecraftAdapter(Star):
     # WebSocket 消息处理器
 
     async def _handle_chat_message(self, data: dict):
-        """处理聊天消息"""
+        """处理聊天消息 - 创建群聊会话让 AI 可以回复"""
         if not self.config.forward_chat_to_astrbot:
             return
 
         player = data.get("player", "Unknown")
         message = data.get("message", "")
-        formatted_msg = self.formatter.format_mc_chat(player, message)
-        await self._forward_to_astrbot(formatted_msg)
+
+        # 检查是否启用 AI 对话功能
+        if self.config.enable_ai_chat and self.config.ai_chat_prefix:
+            # 检查消息是否以 AI 前缀开头
+            if not message.startswith(self.config.ai_chat_prefix):
+                # 不是 AI 对话消息，仍然转发到目标会话（如果配置了）
+                formatted_msg = self.formatter.format_mc_chat(player, message)
+                await self._forward_to_astrbot(formatted_msg)
+                return
+
+            # 移除前缀，获取实际消息内容
+            actual_message = message[len(self.config.ai_chat_prefix) :].strip()
+            if not actual_message:
+                # 只有前缀没有内容，忽略
+                return
+
+            # 使用处理后的消息创建 AI 对话事件
+            message = actual_message
+
+        # 构造消息对象
+        astr_message = AstrBotMessage()
+        astr_message.type = MessageType.GROUP_MESSAGE
+        astr_message.self_id = "minecraft_server"
+        astr_message.session_id = self.mc_group_session_id
+        astr_message.sender.user_id = f"mc_player_{player}"
+        astr_message.sender.nickname = player
+        astr_message.message_str = message
+        astr_message.message.plain(message)
+        astr_message.raw_message = data
+
+        # 创建事件并发送到 AstrBot
+        event = AstrMessageEvent(
+            message_str=message,
+            message_obj=astr_message,
+            platform_meta=None,
+            session_id=self.mc_group_session_id,
+            context=self.context,
+        )
+
+        # 将事件提交到事件队列
+        await self.context.queue.put(event)
+        logger.debug(f"[MC适配器] 创建 AI 对话事件: [{player}] {message}")
 
     async def _handle_player_join(self, data: dict):
         """处理玩家加入消息"""
@@ -231,6 +285,31 @@ class MinecraftAdapter(Star):
     async def mc_help(self, event: AstrMessageEvent):
         """显示帮助信息"""
         yield event.plain_result(self.formatter.format_help())
+
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def handle_mc_group_reply(self, event: AstrMessageEvent):
+        """处理 AI 对 MC 群聊的回复"""
+        # 检查是否是回复到 MC 群聊会话
+        if event.unified_msg_origin != self.mc_group_session_id:
+            return
+
+        if not self.config.enabled:
+            return
+
+        if not self.ws_client.is_connected() or not self.ws_client.authenticated:
+            return
+
+        # 获取 AI 回复的消息
+        message_str = event.message_str.strip()
+        if not message_str:
+            return
+
+        # 发送到 Minecraft 服务器（使用 [AI] 前缀标识）
+        success = await self.ws_client.send_chat(f"[AI] {message_str}", None)
+        if success:
+            logger.debug(f"[MC适配器] AI 回复已发送: {message_str[:50]}...")
+        else:
+            logger.warning("[MC适配器] AI 回复发送失败")
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def auto_forward_message(self, event: AstrMessageEvent):

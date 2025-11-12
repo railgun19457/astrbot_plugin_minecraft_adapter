@@ -25,6 +25,10 @@ class MinecraftAdapterConfig:
     auto_forward_prefix: str = ""
     auto_forward_sessions: list[str] = field(default_factory=list)
 
+    # AI 对话配置
+    ai_chat_prefix: str = "!ai"  # 触发 AI 对话的前缀
+    enable_ai_chat: bool = True  # 是否启用 AI 对话功能
+
     def __post_init__(self):
         """初始化后处理"""
         self.forward_target_session = self._parse_list(self.forward_target_session)

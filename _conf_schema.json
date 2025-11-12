@@ -82,5 +82,17 @@
     "description": "自动转发监听的会话",
     "hint": "使用sid获取，例如 aiocqhttp:group:123456789。留空则监听所有会话。",
     "default": []
+  },
+  "enable_ai_chat": {
+    "type": "bool",
+    "description": "启用 AI 对话功能",
+    "hint": "允许 Minecraft 玩家与 AI 进行对话",
+    "default": true
+  },
+  "ai_chat_prefix": {
+    "type": "string",
+    "description": "AI 对话触发前缀",
+    "hint": "玩家消息以此前缀开头时触发 AI 对话（例如: ai）。留空则所有消息都触发 AI。",
+    "default": "ai"
   }
 }

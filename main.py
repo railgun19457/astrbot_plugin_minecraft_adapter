@@ -1,411 +1,308 @@
-"""
-AstrBot Minecraft Adapter Plugin
-连接 Minecraft 服务器的 AstrBot 插件
-"""
+"""Minecraft Adapter Plugin for AstrBot.
 
-from __future__ import annotations
+This plugin enables communication between Minecraft servers and AstrBot,
+providing AI chat, message forwarding, and server management features.
+"""
 
 import asyncio
+from pathlib import Path
 
 from astrbot.api import logger
-from astrbot.api.event import AstrMessageEvent, MessageChain, filter
-from astrbot.api.platform import AstrBotMessage, MessageType, PlatformMetadata
-from astrbot.api.star import Context, Star
-from astrbot.core.message.components import Plain
-from astrbot.core.platform.astrbot_message import MessageMember
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star, register
+from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from .config import MinecraftAdapterConfig
-from .message_formatter import MessageFormatter
-from .rest_api_client import RestApiClient
-from .utils import get_sender_display_name, parse_command_args
-from .websocket_client import WebSocketClient
-
-
-class MinecraftMessageEvent(AstrMessageEvent):
-    """Minecraft 消息事件，支持发送回复到游戏服务器"""
-
-    def __init__(
-        self,
-        message_str: str,
-        message_obj: AstrBotMessage,
-        platform_meta: PlatformMetadata,
-        session_id: str,
-        ws_client: WebSocketClient,
-    ):
-        super().__init__(message_str, message_obj, platform_meta, session_id)
-        self.ws_client = ws_client
-
-    async def send(self, message: MessageChain):
-        """发送消息到 Minecraft 服务器"""
-        # 调用父类方法记录指标
-        await super().send(message)
-
-        # 提取纯文本消息
-        text_parts = []
-        for component in message.chain:
-            if isinstance(component, Plain):
-                text_parts.append(component.text)
-
-        message_str = "".join(text_parts).strip()
-        if not message_str:
-            return
-
-        # 发送到 Minecraft 服务器（AI 作为发送者）
-        success = await self.ws_client.send_chat(message_str, "AI")
-        if success:
-            logger.debug(f"[MC适配器] AI 回复已发送: {message_str[:50]}...")
-        else:
-            logger.warning("[MC适配器] AI 回复发送失败")
+from .core.models import MCMessage, MessageType, ServerConfig, ServerInfo
+from .core.server_manager import ServerManager
+from .handlers.commands import CommandHandler
+from .platform.adapter import MCPlatformAdapter
+from .services.binding import BindingService
+from .services.message_bridge import MessageBridge
+from .services.renderer import InfoRenderer
 
 
-class MinecraftAdapter(Star):
-    """Minecraft 服务器适配器插件"""
+@register(
+    "astrbot_plugin_minecraft_adapter",
+    "AstrBot",
+    "Minecraft服务器适配器插件，支持AI聊天、消息互通、服务器管理",
+    "1.0.0",
+    "https://github.com/AstrBotDevs/astrbot_plugin_minecraft_adapter",
+)
+class MinecraftAdapterPlugin(Star):
+    """Main plugin class for Minecraft adapter."""
 
-    # 类级别的运行标志，确保只有一个实例在运行
-    _instance_running = False
-    _instance_lock = asyncio.Lock()
-
-    def __init__(self, context: Context, config: dict):
+    def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context)
-        self.context = context
-        self.config = MinecraftAdapterConfig.from_dict(config)
+        self.config = config or {}
 
-        # 初始化组件
-        self.ws_client = WebSocketClient(self.config)
-        self.rest_client = RestApiClient(self.config)
-        self.formatter = MessageFormatter()
-        self.status_task: asyncio.Task | None = None
-
-        # MC 群聊会话 ID（固定格式）
-        self.mc_group_session_id = "minecraft:group:server"
-
-        # 注册消息处理器
-        self._register_ws_handlers()
-
-        # 启动插件
-        if not self.config.enabled:
-            logger.info("[MC适配器] 插件未启用")
-        elif not self.config.websocket_token:
-            logger.warning("[MC适配器] 未配置 Token，请设置 websocket_token")
-        else:
-            asyncio.create_task(self._safe_start())
-
-    async def _safe_start(self):
-        """安全启动，防止重复启动"""
-        async with MinecraftAdapter._instance_lock:
-            if MinecraftAdapter._instance_running:
-                logger.warning("[MC适配器] 已有实例在运行，跳过启动")
-                return
-
-            MinecraftAdapter._instance_running = True
-            logger.info("[MC适配器] 插件已启用，正在连接...")
-            self._log_config_info()
-            await self._start()
-
-    def _register_ws_handlers(self):
-        """注册 WebSocket 消息处理器"""
-        self.ws_client.register_handler("chat", self._handle_chat_message)
-        self.ws_client.register_handler("ai_chat", self._handle_ai_chat_message)
-        self.ws_client.register_handler("player_join", self._handle_player_join)
-        self.ws_client.register_handler("player_leave", self._handle_player_leave)
-        self.ws_client.register_handler("status_response", self._handle_status_response)
-
-    def _log_config_info(self):
-        """输出配置信息"""
-        info_parts = []
-
-        if self.config.auto_forward_prefix:
-            session_info = (
-                f"{len(self.config.auto_forward_sessions)} 个会话"
-                if self.config.auto_forward_sessions
-                else "所有会话"
-            )
-            info_parts.append(f"自动转发: 前缀'{self.config.auto_forward_prefix}' | {session_info}")
-
-        if self.config.forward_target_session:
-            info_parts.append(f"消息转发目标: {len(self.config.forward_target_session)} 个")
-
-        ai_status = "已启用" if self.config.enable_ai_chat else "已禁用"
-        info_parts.append(f"AI 对话功能{ai_status}")
-
-        for info in info_parts:
-            logger.info(f"[MC适配器] {info}")
-
-    async def _start(self):
-        """启动插件"""
-        logger.info(f"[MC适配器] 启动插件实例: {id(self)}")
-
-        # 启动 WebSocket 客户端
-        await self.ws_client.start()
-
-        # 启动状态检查任务
-        if self.config.status_check_interval > 0:
-            self.status_task = asyncio.create_task(self._status_check_loop())
-
-    async def _status_check_loop(self):
-        """定时检查服务器状态"""
-        while self.ws_client.running:
-            await asyncio.sleep(self.config.status_check_interval)
-            if self.ws_client.authenticated:
-                await self.ws_client.request_status()
-
-    # WebSocket 消息处理器
-
-    async def _handle_chat_message(self, data: dict):
-        """处理普通聊天消息 - 转发到目标会话"""
-        if not self.config.forward_chat_to_astrbot:
-            return
-
-        player = data.get("player", "Unknown")
-        message = data.get("message", "")
-        formatted_msg = self.formatter.format_mc_chat(player, message)
-        await self._forward_to_astrbot(formatted_msg)
-
-    async def _handle_ai_chat_message(self, data: dict):
-        """处理 AI 对话消息 - 创建群聊会话让 AI 可以回复"""
-        if not self.config.enable_ai_chat:
-            logger.debug("[MC适配器] AI 对话功能未启用，忽略 AI 消息")
-            return
-
-        player = data.get("player", "Unknown")
-        message = data.get("message", "")
-
-        if not message.strip():
-            logger.debug("[MC适配器] AI 消息内容为空，忽略")
-            return
-
-        # 构造消息对象
-        astr_message = AstrBotMessage()
-        astr_message.type = MessageType.GROUP_MESSAGE
-        astr_message.self_id = "minecraft_server"
-        astr_message.session_id = self.mc_group_session_id
-        astr_message.sender = MessageMember(
-            user_id=f"mc_player_{player}", nickname=player
+        # Get plugin data path
+        plugin_data_path = (
+            Path(get_astrbot_data_path()) / "plugin_data" / "astrbot_plugin_minecraft_adapter"
         )
-        astr_message.message_str = message
-        astr_message.message = [Plain(text=message)]
-        astr_message.raw_message = data
+        plugin_data_path.mkdir(parents=True, exist_ok=True)
 
-        # 创建平台元数据
-        platform_meta = PlatformMetadata(
-            name="minecraft",
-            description="Minecraft 服务器适配器",
-            id="minecraft_adapter",
+        # Initialize services
+        self.server_manager = ServerManager()
+        self.binding_service = BindingService(plugin_data_path)
+        self.message_bridge = MessageBridge(context, self.server_manager)
+
+        # Server configs cache
+        self._server_configs: dict[str, ServerConfig] = {}
+
+        # Platform adapters
+        self._adapters: dict[str, MCPlatformAdapter] = {}
+
+        # Command handler
+        self.command_handler: CommandHandler | None = None
+
+        # Set up message handlers
+        self.server_manager.set_message_handler(self._on_server_message)
+        self.server_manager.set_connect_handler(self._on_server_connect)
+        self.server_manager.set_disconnect_handler(self._on_server_disconnect)
+
+        # Background tasks
+        self._init_task: asyncio.Task | None = None
+
+        # Load configuration and start servers
+        self._init_task = asyncio.create_task(self._initialize())
+        self._init_task.add_done_callback(self._on_init_done)
+
+    def _on_init_done(self, task: asyncio.Task):
+        """Callback when initialization task completes."""
+        try:
+            exc = task.exception()
+            if exc:
+                logger.error(f"[MC Adapter] Initialization failed: {exc}")
+        except asyncio.CancelledError:
+            pass
+
+    async def _initialize(self):
+        """Initialize the plugin."""
+        if not self.config.get("enabled", True):
+            logger.info("[MC Adapter] Plugin is disabled")
+            return
+
+        # Parse server configurations
+        mc_servers = self.config.get("mc_servers", [])
+        if not mc_servers:
+            logger.warning("[MC Adapter] No servers configured")
+            return
+
+        for server_data in mc_servers:
+            if not server_data.get("enabled", True):
+                continue
+
+            config = ServerConfig.from_dict(server_data)
+            if not config.server_id:
+                logger.warning("[MC Adapter] Skipping server with empty ID")
+                continue
+
+            self._server_configs[config.server_id] = config
+
+            # Add server to manager
+            self.server_manager.add_server(config)
+
+            # Register with message bridge
+            self.message_bridge.register_server(config)
+
+            logger.info(f"[MC Adapter] Configured server: {config.server_id}")
+
+        # Initialize renderer
+        # Check if any server has text2image enabled
+        any_text2image = any(c.text2image for c in self._server_configs.values())
+        renderer = InfoRenderer(text2image_enabled=any_text2image)
+
+        # Initialize command handler
+        self.command_handler = CommandHandler(
+            server_manager=self.server_manager,
+            binding_service=self.binding_service,
+            renderer=renderer,
+            get_server_config=lambda sid: self._server_configs.get(sid),
         )
 
-        # 创建自定义事件（包含 ws_client 以便发送回复）
-        event = MinecraftMessageEvent(
-            message_str=message,
-            message_obj=astr_message,
-            platform_meta=platform_meta,
-            session_id=self.mc_group_session_id,
-            ws_client=self.ws_client,
+        # Register custom commands for each server
+        for server_id, config in self._server_configs.items():
+            if config.custom_cmd_list:
+                self.command_handler.register_custom_commands(
+                    server_id, config.custom_cmd_list
+                )
+
+        # Start all servers
+        await self.server_manager.start_all()
+
+        logger.info(
+            f"[MC Adapter] Plugin initialized with {len(self._server_configs)} servers"
         )
 
-        # 标记为唤醒事件，以便触发 LLM 处理
-        event.is_wake = True
-        event.is_at_or_wake_command = True
-
-        # 将事件提交到事件队列
-        self.context.get_event_queue().put_nowait(event)
-        logger.debug(f"[MC适配器] 创建 AI 对话事件: [{player}] {message}")
-
-    async def _handle_player_join(self, data: dict):
-        """处理玩家加入消息"""
-        if not self.config.forward_join_leave_to_astrbot:
+    async def _on_server_message(self, server_id: str, msg: MCMessage):
+        """Handle incoming message from MC server."""
+        config = self._server_configs.get(server_id)
+        if not config:
             return
 
-        player = data.get("player", "Unknown")
-        formatted_msg = self.formatter.format_mc_player_join(player)
-        await self._forward_to_astrbot(formatted_msg)
+        logger.debug(f"[MC-{server_id}] Received message type: {msg.type}")
 
-    async def _handle_player_leave(self, data: dict):
-        """处理玩家离开消息"""
-        if not self.config.forward_join_leave_to_astrbot:
+        if msg.type == MessageType.CHAT_REQUEST:
+            # AI chat request - forward to platform adapter
+            adapter = self._adapters.get(server_id)
+            if adapter:
+                await adapter.handle_chat_request(msg)
+
+        elif msg.type in (
+            MessageType.MESSAGE_FORWARD,
+            MessageType.PLAYER_JOIN,
+            MessageType.PLAYER_QUIT,
+        ):
+            # Forward to external sessions
+            await self.message_bridge.handle_mc_message(server_id, msg)
+
+    async def _on_server_connect(self, server_id: str, info: ServerInfo):
+        """Handle server connection."""
+        config = self._server_configs.get(server_id)
+        if not config:
             return
 
-        player = data.get("player", "Unknown")
-        formatted_msg = self.formatter.format_mc_player_leave(player)
-        await self._forward_to_astrbot(formatted_msg)
+        logger.info(
+            f"[MC-{server_id}] Connected to {info.name} "
+            f"({info.platform} {info.minecraft_version})"
+        )
 
-    async def _handle_status_response(self, data: dict):
-        """处理状态响应"""
-        # 这里可以存储最新的服务器状态
-        pass
+        # Create platform adapter if AI chat is enabled
+        if config.enable_ai_chat:
+            server = self.server_manager.get_server(server_id)
+            if server:
+                adapter = MCPlatformAdapter(
+                    server_config=config,
+                    server_connection=server,
+                    event_queue=self.context.platform_mgr.event_queue
+                    if self.context.platform_mgr
+                    else asyncio.Queue(),
+                )
+                self._adapters[server_id] = adapter
 
-    async def _forward_to_astrbot(self, message: str):
-        """转发消息到 AstrBot"""
-        logger.info(f"[MC适配器] 收到消息: {message}")
-        if not self.config.forward_target_session:
-            return
+                # Register with platform manager
+                if self.context.platform_mgr:
+                    self.context.platform_mgr.add_platform(adapter)
 
-        for target in self.config.forward_target_session:
-            try:
-                await self.context.send_message(target, MessageChain().message(message))
-                logger.debug(f"[MC适配器] 已转发到: {target}")
-            except Exception as e:
-                logger.error(f"[MC适配器] 转发失败 {target}: {e}")
+                # Start adapter (non-blocking)
+                asyncio.create_task(adapter.run())
 
-    # 指令处理器
+                logger.info(f"[MC-{server_id}] Platform adapter registered")
 
-    def _check_enabled(self, event: AstrMessageEvent) -> bool:
-        """检查插件是否启用，返回 False 表示未启用"""
-        if not self.config.enabled:
-            return False
-        return True
+    async def _on_server_disconnect(self, server_id: str, reason: str):
+        """Handle server disconnection."""
+        logger.warning(f"[MC-{server_id}] Disconnected: {reason}")
+
+        # Stop platform adapter
+        adapter = self._adapters.pop(server_id, None)
+        if adapter:
+            await adapter.stop()
+
+    def _get_server_config(self, server_id: str) -> ServerConfig | None:
+        """Get server configuration by ID."""
+        return self._server_configs.get(server_id)
+
+    # Command handlers
 
     @filter.command_group("mc")
     def mc_group(self):
-        """Minecraft 服务器管理指令组"""
+        """Minecraft server management commands."""
         pass
 
-    @mc_group.command("status")
-    async def mc_status(self, event: AstrMessageEvent):
-        """查看服务器状态"""
-        if not self._check_enabled(event):
-            yield event.plain_result("❌ Minecraft 适配器未启用")
-            return
-
-        status = await self.rest_client.get_server_status()
-        yield event.plain_result(self.formatter.format_server_status(status))
-
-    @mc_group.command("players")
-    async def mc_players(self, event: AstrMessageEvent):
-        """查看在线玩家"""
-        if not self._check_enabled(event):
-            yield event.plain_result("❌ Minecraft 适配器未启用")
-            return
-
-        players = await self.rest_client.get_players_info()
-        yield event.plain_result(self.formatter.format_players_info(players))
-
-    @mc_group.command("info")
-    async def mc_info(self, event: AstrMessageEvent):
-        """查看连接状态"""
-        if not self._check_enabled(event):
-            yield event.plain_result("❌ Minecraft 适配器未启用")
-            return
-
-        info_text = self.formatter.format_connection_info(
-            ws_connected=self.ws_client.is_connected(),
-            ws_authenticated=self.ws_client.authenticated,
-            config=self.config,
-            forward_targets_count=len(self.config.forward_target_session),
-        )
-        yield event.plain_result(info_text)
-
-    @mc_group.command("say")
-    async def mc_say(self, event: AstrMessageEvent, message: str):
-        """向服务器发送消息"""
-        if not self._check_enabled(event):
-            yield event.plain_result("❌ Minecraft 适配器未启用")
-            return
-
-        sender_name = await get_sender_display_name(event)
-        success = await self.ws_client.send_chat(message, sender_name)
-        yield event.plain_result(
-            "✅ 消息已发送" if success else "❌ 发送失败，请检查连接"
-        )
-
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    @mc_group.command("cmd")
-    async def mc_cmd(self, event: AstrMessageEvent):
-        """执行服务器指令（仅管理员）"""
-        if not self._check_enabled(event):
-            yield event.plain_result("❌ Minecraft 适配器未启用")
-            return
-
-        command = parse_command_args(event.message_str.strip(), "cmd")
-        if not command:
-            yield event.plain_result(
-                "❌ 用法: <prefix>mc cmd <指令>\n示例: /mc cmd weather clear"
-            )
-            return
-
-        success = await self.ws_client.send_command(command)
-        yield event.plain_result(
-            f"✅ 指令已执行: {command}" if success else "❌ 执行失败，请检查连接"
-        )
-
-    @mc_group.command("reconnect")
-    async def mc_reconnect(self, event: AstrMessageEvent):
-        """重新连接服务器"""
-        if not self._check_enabled(event):
-            yield event.plain_result("❌ Minecraft 适配器未启用")
-            return
-
-        yield event.plain_result("🔄 正在重新连接...")
-        success = await self.ws_client.reconnect(timeout=10)
-
-        if success:
-            yield event.plain_result("✅ 重新连接成功！")
-        elif self.ws_client.is_connected():
-            yield event.plain_result("⚠️ 连接已建立但认证失败，请检查 Token")
-        else:
-            yield event.plain_result("❌ 重新连接失败，请检查服务器状态")
-
     @mc_group.command("help")
-    async def mc_help(self, event: AstrMessageEvent):
+    async def cmd_help(self, event: AstrMessageEvent):
         """显示帮助信息"""
-        yield event.plain_result(self.formatter.format_help())
+        if self.command_handler:
+            async for result in self.command_handler.handle_help(event):
+                yield result
+
+    @mc_group.command("status")
+    async def cmd_status(self, event: AstrMessageEvent, server_id: str = ""):
+        """查看服务器状态"""
+        if self.command_handler:
+            async for result in self.command_handler.handle_status(event, server_id):
+                yield result
+
+    @mc_group.command("list")
+    async def cmd_list(self, event: AstrMessageEvent, server_id: str = ""):
+        """查看在线玩家列表"""
+        if self.command_handler:
+            async for result in self.command_handler.handle_list(event, server_id):
+                yield result
+
+    @mc_group.command("player")
+    async def cmd_player(
+        self, event: AstrMessageEvent, player_id: str, server_id: str = ""
+    ):
+        """查看玩家详细信息"""
+        if self.command_handler:
+            async for result in self.command_handler.handle_player(
+                event, player_id, server_id
+            ):
+                yield result
+
+    @mc_group.command("cmd")
+    async def cmd_execute(
+        self, event: AstrMessageEvent, command: str, server_id: str = ""
+    ):
+        """远程执行服务器指令"""
+        if self.command_handler:
+            async for result in self.command_handler.handle_cmd(
+                event, command, server_id
+            ):
+                yield result
+
+    @mc_group.command("log")
+    async def cmd_log(
+        self, event: AstrMessageEvent, lines: int = 100, server_id: str = ""
+    ):
+        """查询服务器日志"""
+        if self.command_handler:
+            async for result in self.command_handler.handle_log(
+                event, lines, server_id
+            ):
+                yield result
+
+    @mc_group.command("bind")
+    async def cmd_bind(
+        self, event: AstrMessageEvent, player_id: str, server_id: str = ""
+    ):
+        """绑定游戏ID"""
+        if self.command_handler:
+            async for result in self.command_handler.handle_bind(
+                event, player_id, server_id
+            ):
+                yield result
+
+    @mc_group.command("unbind")
+    async def cmd_unbind(self, event: AstrMessageEvent):
+        """解除绑定"""
+        if self.command_handler:
+            async for result in self.command_handler.handle_unbind(event):
+                yield result
+
+    # Message forwarding listener
 
     @filter.event_message_type(filter.EventMessageType.ALL)
-    async def auto_forward_message(self, event: AstrMessageEvent):
-        """自动转发消息到 Minecraft"""
-        # 提前检查所有条件
-        if not (
-            self.config.auto_forward_prefix
-            and self.config.enabled
-            and self.ws_client.is_connected()
-            and self.ws_client.authenticated
-        ):
+    async def on_message(self, event: AstrMessageEvent):
+        """Listen for messages to forward to MC server."""
+        # Check if this message should be forwarded
+        forwarded = await self.message_bridge.handle_external_message(event)
+        if forwarded:
+            # Stop event propagation if message was forwarded
+            # Return nothing to indicate the message was handled
             return
-
-        message_str = event.message_str.strip()
-        if not message_str.startswith(self.config.auto_forward_prefix):
-            return
-
-        # 检查会话白名单
-        if self.config.auto_forward_sessions:
-            if event.unified_msg_origin not in self.config.auto_forward_sessions:
-                return
-
-        # 移除前缀并获取实际消息
-        actual_message = message_str[len(self.config.auto_forward_prefix) :].strip()
-        if not actual_message:
-            return
-
-        # 转发消息
-        sender_name = await get_sender_display_name(event)
-        try:
-            success = await self.ws_client.send_chat(actual_message, sender_name)
-            if success:
-                logger.debug(f"[MC适配器] 自动转发: [{sender_name}] {actual_message}")
-                yield event.plain_result(f"✅ 已转发: [{sender_name}] {actual_message}")
-                event.stop_event()
-            else:
-                yield event.plain_result("❌ 转发失败，请检查服务器连接")
-        except Exception as e:
-            logger.error(f"[MC适配器] 自动转发失败: {e}")
-            yield event.plain_result(f"❌ 转发失败: {e}")
 
     async def terminate(self):
-        """插件停止时调用"""
-        logger.info(f"[MC适配器] 正在停止: {id(self)}")
+        """Clean up when plugin is terminated."""
+        logger.info("[MC Adapter] Shutting down...")
 
-        # 重置运行标志
-        async with MinecraftAdapter._instance_lock:
-            MinecraftAdapter._instance_running = False
+        # Stop all adapters
+        for adapter in self._adapters.values():
+            await adapter.stop()
+        self._adapters.clear()
 
-        # 停止状态检查任务
-        if self.status_task and not self.status_task.done():
-            self.status_task.cancel()
-            try:
-                await self.status_task
-            except asyncio.CancelledError:
-                pass
+        # Stop all server connections
+        await self.server_manager.stop_all()
 
-        # 停止客户端
-        await self.ws_client.stop()
-        await self.rest_client.close()
-        logger.info("[MC适配器] 已停止")
+        logger.info("[MC Adapter] Shutdown complete")

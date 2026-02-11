@@ -1,4 +1,4 @@
-"""Data models for Minecraft adapter plugin."""
+"""Minecraft 适配器插件的数据模型"""
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -8,7 +8,7 @@ E = TypeVar("E", bound=Enum)
 
 
 def safe_enum(enum_class: type[E], value: str, default: E) -> E:
-    """Safely parse enum value, returning default if invalid."""
+    """安全地解析枚举值，如果无效则返回默认值"""
     try:
         return enum_class(value)
     except ValueError:
@@ -16,7 +16,7 @@ def safe_enum(enum_class: type[E], value: str, default: E) -> E:
 
 
 class MessageType(str, Enum):
-    """WebSocket message types according to protocol."""
+    """根据协议定义的 WebSocket 消息类型"""
 
     HEARTBEAT = "HEARTBEAT"
     HEARTBEAT_ACK = "HEARTBEAT_ACK"
@@ -35,7 +35,7 @@ class MessageType(str, Enum):
 
 
 class SourceType(str, Enum):
-    """Message source types."""
+    """消息源类型"""
 
     PLAYER = "PLAYER"
     SERVER = "SERVER"
@@ -43,7 +43,7 @@ class SourceType(str, Enum):
 
 
 class TargetType(str, Enum):
-    """Message target types."""
+    """消息目标类型"""
 
     PLAYER = "PLAYER"
     BROADCAST = "BROADCAST"
@@ -51,14 +51,14 @@ class TargetType(str, Enum):
 
 
 class ChatMode(str, Enum):
-    """Chat modes for AI chat."""
+    """聊天模式（用于 AI 聊天）"""
 
     GROUP = "GROUP"
     PRIVATE = "PRIVATE"
 
 
 class ErrorCode(int, Enum):
-    """Error codes according to protocol."""
+    """根据协议定义的错误码"""
 
     SUCCESS = 0
     AUTH_INVALID = 1001
@@ -79,7 +79,7 @@ class ErrorCode(int, Enum):
 
 @dataclass
 class ServerInfo:
-    """Server information from connection or API."""
+    """来自连接或 API 的服务器信息"""
 
     name: str = ""
     platform: str = ""
@@ -108,7 +108,7 @@ class ServerInfo:
 
 @dataclass
 class PlayerInfo:
-    """Basic player information."""
+    """基本玩家信息"""
 
     uuid: str = ""
     name: str = ""
@@ -133,7 +133,7 @@ class PlayerInfo:
 
 @dataclass
 class PlayerDetail(PlayerInfo):
-    """Detailed player information."""
+    """详细玩家信息"""
 
     health: float = 20.0
     max_health: float = 20.0
@@ -175,7 +175,7 @@ class PlayerDetail(PlayerInfo):
 
 @dataclass
 class MCMessageSource:
-    """Message source information."""
+    """消息源信息"""
 
     type: SourceType = SourceType.PLAYER
     server_name: str = ""
@@ -200,7 +200,7 @@ class MCMessageSource:
 
 @dataclass
 class MCMessageTarget:
-    """Message target information."""
+    """消息目标信息"""
 
     type: TargetType = TargetType.BROADCAST
     player_uuid: str = ""
@@ -227,7 +227,7 @@ class MCMessageTarget:
 
 @dataclass
 class MCMessage:
-    """Unified message structure for WebSocket communication."""
+    """用于 WebSocket 通信的统一消息结构"""
 
     type: MessageType
     id: str = ""
@@ -273,7 +273,7 @@ class MCMessage:
 
 @dataclass
 class ServerConfig:
-    """Server connection configuration."""
+    """服务器连接配置"""
 
     enabled: bool = True
     server_id: str = ""
@@ -282,7 +282,7 @@ class ServerConfig:
     token: str = ""
     enable_ai_chat: bool = True
     text2image: bool = True
-    # Message forwarding config
+    # 消息转发配置
     forward_chat_to_astrbot: bool = True
     forward_chat_format: str = "<{player}> {message}"
     forward_join_leave_to_astrbot: bool = False
@@ -290,7 +290,7 @@ class ServerConfig:
     auto_forward_prefix: str = "*"
     auto_forward_sessions: list[str] = field(default_factory=list)
     mark_option: str = "emoji"
-    # Command config
+    # 命令配置
     cmd_enabled: bool = True
     cmd_white_black_list: str = "white"
     cmd_list: list[str] = field(default_factory=list)
@@ -301,7 +301,7 @@ class ServerConfig:
     def from_dict(cls, data: dict) -> "ServerConfig":
         server = data.get("server", {})
         message = data.get("message", {})
-        cmd = data.get("cmd", {})  # cmd is at the same level as message, not nested
+        cmd = data.get("cmd", {})  # cmd 与 message 处于同一层级，不是嵌套关系
 
         return cls(
             enabled=data.get("enabled", True),
@@ -332,7 +332,7 @@ class ServerConfig:
 
 @dataclass
 class ServerStatus:
-    """Server status information."""
+    """服务器状态信息"""
 
     online: bool = False
     tps_1m: float = 0.0
@@ -369,7 +369,7 @@ class ServerStatus:
 
 @dataclass
 class LogEntry:
-    """Log entry from server."""
+    """服务器日志条目"""
 
     timestamp: int = 0
     level: str = ""
@@ -388,7 +388,7 @@ class LogEntry:
 
 @dataclass
 class ApiResponse:
-    """REST API response structure."""
+    """REST API 响应结构"""
 
     code: int = 0
     message: str = ""

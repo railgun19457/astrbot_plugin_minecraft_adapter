@@ -1,4 +1,4 @@
-"""Renderer service for formatting server info as images or text."""
+"""将服务器信息格式化为图片或文本的渲染服务"""
 
 import html
 from dataclasses import dataclass
@@ -13,17 +13,17 @@ if TYPE_CHECKING:
 
 
 def escape(text: str) -> str:
-    """Escape HTML special characters."""
+    """转义 HTML 特殊字符"""
     return html.escape(str(text))
 
 
 @dataclass
 class RenderResult:
-    """Result of a render operation.
+    """渲染操作的结果
 
-    Attributes:
-        content: The rendered content as string or BytesIO for images
-        is_image: True if content is an image (BytesIO), False for text (str)
+    属性:
+        content: 渲染的内容，字符串或图片的 BytesIO
+        is_image: True 表示内容是图片 (BytesIO)，False 表示文本 (str)
     """
 
     content: str | BytesIO
@@ -31,24 +31,24 @@ class RenderResult:
 
     @property
     def text(self) -> str:
-        """Get content as text (raises error if is_image is True)."""
+        """获取文本形式的内容（如果 is_image 为 True 则抛出错误）"""
         if self.is_image:
-            raise ValueError("Cannot get text from image content")
+            raise ValueError("无法从图片内容中获取文本")
         return str(self.content)
 
     @property
     def image(self) -> BytesIO:
-        """Get content as image bytes (raises error if is_image is False)."""
+        """获取图片字节（如果 is_image 为 False 则抛出错误）"""
         if not self.is_image:
-            raise ValueError("Cannot get image from text content")
+            raise ValueError("无法从文本内容中获取图片")
         return self.content  # type: ignore
 
 
 class InfoRenderer:
-    """Service for rendering server/player info to text or HTML.
+    """将服务器/玩家信息渲染为文本或 HTML 的服务
 
-    Note: Image rendering is handled by the Star class's html_render method.
-    This class only provides text and HTML formatting.
+    注意：图片渲染由 Star 类的 html_render 方法处理。
+    此类仅提供文本和 HTML 格式化。
     """
 
     def __init__(self, text2image_enabled: bool = True):
@@ -56,12 +56,12 @@ class InfoRenderer:
         self._html_renderer: HtmlRenderer | None = None
 
     async def _ensure_renderer(self):
-        """Ensure HTML renderer is initialized."""
+        """确保 HTML 渲染器已初始化"""
         if self._html_renderer is None:
             self._html_renderer = HtmlRenderer()
             await self._html_renderer.initialize()
 
-    # Main entry methods that commands.py calls
+    # 命令处理器调用的主入口方法
 
     async def render_server_status(
         self,
@@ -69,28 +69,28 @@ class InfoRenderer:
         server_status: "ServerStatus",
         as_image: bool = True,
     ) -> RenderResult:
-        """Render server status as image or text.
+        """将服务器状态渲染为图片或文本
 
-        Args:
-            server_info: Server information
-            server_status: Server status metrics
-            as_image: Whether to render as image (requires text2image_enabled)
+        参数:
+            server_info: 服务器信息
+            server_status: 服务器状态指标
+            as_image: 是否渲染为图片（需要启用 text2image）
 
-        Returns:
-            RenderResult containing rendered content
+        返回:
+            RenderResult 包含渲染内容
         """
         if as_image and self.text2image_enabled:
             try:
                 await self._ensure_renderer()
                 html = self.render_server_status_html(server_info, server_status)
-                image_path = await self._html_renderer.render_t2i(html, use_network=False)
-                # Read the image file and return as BytesIO
+                image_path = await self._html_renderer.render_t2i(
+                    html, use_network=False
+                )
+                # 读取图片文件并作为 BytesIO 返回
                 with open(image_path, "rb") as f:
                     return RenderResult(BytesIO(f.read()), is_image=True)
             except Exception as e:
-                logger.warning(
-                    f"[Renderer] Failed to render image, fallback to text: {e}"
-                )
+                logger.warning(f"[Renderer] 渲染图片失败，回退到文本模式: {e}")
 
         return RenderResult(
             self.render_server_status_text(server_info, server_status), is_image=False
@@ -103,29 +103,29 @@ class InfoRenderer:
         server_name: str = "",
         as_image: bool = True,
     ) -> RenderResult:
-        """Render player list as image or text.
+        """将玩家列表渲染为图片或文本
 
-        Args:
-            players: List of online players
-            total: Total player count
-            server_name: Server name for display
-            as_image: Whether to render as image (requires text2image_enabled)
+        参数:
+            players: 在线玩家列表
+            total: 玩家总数
+            server_name: 用于显示的服务器名称
+            as_image: 是否渲染为图片（需要启用 text2image）
 
-        Returns:
-            RenderResult containing rendered content
+        返回:
+            RenderResult 包含渲染内容
         """
         if as_image and self.text2image_enabled:
             try:
                 await self._ensure_renderer()
                 html = self.render_player_list_html(players, total, server_name)
-                image_path = await self._html_renderer.render_t2i(html, use_network=False)
-                # Read the image file and return as BytesIO
+                image_path = await self._html_renderer.render_t2i(
+                    html, use_network=False
+                )
+                # 读取图片文件并作为 BytesIO 返回
                 with open(image_path, "rb") as f:
                     return RenderResult(BytesIO(f.read()), is_image=True)
             except Exception as e:
-                logger.warning(
-                    f"[Renderer] Failed to render image, fallback to text: {e}"
-                )
+                logger.warning(f"[Renderer] 渲染图片失败，回退到文本模式: {e}")
 
         return RenderResult(
             self.render_player_list_text(players, total, server_name), is_image=False
@@ -136,38 +136,38 @@ class InfoRenderer:
         player: "PlayerDetail",
         as_image: bool = True,
     ) -> RenderResult:
-        """Render player detail as image or text.
+        """将玩家详情渲染为图片或文本
 
-        Args:
-            player: Player detail information
-            as_image: Whether to render as image (requires text2image_enabled)
+        参数:
+            player: 玩家详细信息
+            as_image: 是否渲染为图片（需要启用 text2image）
 
-        Returns:
-            RenderResult containing rendered content
+        返回:
+            RenderResult 包含渲染内容
         """
         if as_image and self.text2image_enabled:
             try:
                 await self._ensure_renderer()
                 html = self.render_player_detail_html(player)
-                image_path = await self._html_renderer.render_t2i(html, use_network=False)
-                # Read the image file and return as BytesIO
+                image_path = await self._html_renderer.render_t2i(
+                    html, use_network=False
+                )
+                # 读取图片文件并作为 BytesIO 返回
                 with open(image_path, "rb") as f:
                     return RenderResult(BytesIO(f.read()), is_image=True)
             except Exception as e:
-                logger.warning(
-                    f"[Renderer] Failed to render image, fallback to text: {e}"
-                )
+                logger.warning(f"[Renderer] 渲染图片失败，回退到文本模式: {e}")
 
         return RenderResult(self.render_player_detail_text(player), is_image=False)
 
-    # Text/HTML rendering methods
+    # 文本/HTML 渲染方法
 
     def render_server_status_text(
         self,
         server_info: "ServerInfo",
         server_status: "ServerStatus",
     ) -> str:
-        """Render server status as text."""
+        """将服务器状态渲染为文本"""
         return self._format_server_status_text(server_info, server_status)
 
     def render_server_status_html(
@@ -175,7 +175,7 @@ class InfoRenderer:
         server_info: "ServerInfo",
         server_status: "ServerStatus",
     ) -> str:
-        """Render server status as HTML for image rendering."""
+        """将服务器状态渲染为 HTML 以便进行图片渲染"""
         return self._format_server_status_html(server_info, server_status)
 
     def render_player_list_text(
@@ -184,7 +184,7 @@ class InfoRenderer:
         total: int,
         server_name: str = "",
     ) -> str:
-        """Render player list as text."""
+        """将玩家列表渲染为文本"""
         return self._format_player_list_text(players, total, server_name)
 
     def render_player_list_html(
@@ -193,29 +193,29 @@ class InfoRenderer:
         total: int,
         server_name: str = "",
     ) -> str:
-        """Render player list as HTML for image rendering."""
+        """将玩家列表渲染为 HTML 以便进行图片渲染"""
         return self._format_player_list_html(players, total, server_name)
 
     def render_player_detail_text(
         self,
         player: "PlayerDetail",
     ) -> str:
-        """Render player detail as text."""
+        """将玩家详情渲染为文本"""
         return self._format_player_detail_text(player)
 
     def render_player_detail_html(
         self,
         player: "PlayerDetail",
     ) -> str:
-        """Render player detail as HTML for image rendering."""
+        """将玩家详情渲染为 HTML 以便进行图片渲染"""
         return self._format_player_detail_html(player)
 
-    # Text formatters
+    # 文本格式化器
 
     def _format_server_status_text(
         self, info: "ServerInfo", status: "ServerStatus"
     ) -> str:
-        """Format server status as text."""
+        """将服务器状态格式化为文本"""
         lines = [
             f"🖥️ 服务器状态 - {info.name}",
             "━━━━━━━━━━━━━━━━━━",
@@ -244,7 +244,7 @@ class InfoRenderer:
     def _format_player_list_text(
         self, players: list["PlayerInfo"], total: int, server_name: str
     ) -> str:
-        """Format player list as text."""
+        """将玩家列表格式化为文本"""
         title = f"👥 在线玩家 ({total}人)"
         if server_name:
             title += f" - {server_name}"
@@ -255,24 +255,33 @@ class InfoRenderer:
             lines.append("当前没有玩家在线")
         else:
             for p in players:
-                gamemode_emoji = {
-                    "SURVIVAL": "⚔️",
-                    "CREATIVE": "🎨",
-                    "ADVENTURE": "🗺️",
-                    "SPECTATOR": "👻",
-                }.get(p.game_mode, "❓")
-                lines.append(f"{gamemode_emoji} {p.name} | {p.world} | {p.ping}ms")
+                modes = {
+                    "SURVIVAL": ("生存", "⚔️"),
+                    "CREATIVE": ("创造", "🎨"),
+                    "ADVENTURE": ("冒险", "🗺️"),
+                    "SPECTATOR": ("旁观", "👻"),
+                }
+                mode_name, mode_emoji = modes.get(p.game_mode, ("未知", "❓"))
+                lines.append(f"{mode_emoji} {p.name} | {p.world} | {p.ping}ms")
 
         return "\n".join(lines)
 
     def _format_player_detail_text(self, player: "PlayerDetail") -> str:
-        """Format player detail as text."""
+        """将玩家详情格式化为文本"""
+        modes = {
+            "SURVIVAL": "生存",
+            "CREATIVE": "创造",
+            "ADVENTURE": "冒险",
+            "SPECTATOR": "旁观",
+        }
+        mode_name = modes.get(player.game_mode, player.game_mode)
+
         lines = [
             f"👤 玩家信息 - {player.name}",
             "━━━━━━━━━━━━━━━━━━",
             f"UUID: {player.uuid[:8]}...",
             f"世界: {player.world}",
-            f"模式: {player.game_mode}",
+            f"模式: {mode_name}",
             f"延迟: {player.ping}ms",
             "",
             f"❤️ 生命值: {player.health:.1f}/{player.max_health:.1f}",
@@ -291,20 +300,20 @@ class InfoRenderer:
 
         return "\n".join(lines)
 
-    # HTML formatters for image rendering
+    # 用于图片渲染的 HTML 格式化器
 
     def _format_server_status_html(
         self, info: "ServerInfo", status: "ServerStatus"
     ) -> str:
-        """Format server status as HTML for image rendering."""
-        # Calculate TPS color
+        """将服务器状态格式化为 HTML 以便进行图片渲染"""
+        # 计算 TPS 颜色
         tps_color = (
             "#4caf50"
             if status.tps_1m >= 19
             else ("#ff9800" if status.tps_1m >= 15 else "#f44336")
         )
 
-        # Calculate memory color
+        # 计算内存颜色
         mem_color = (
             "#4caf50"
             if status.memory_usage_percent < 70
@@ -420,19 +429,20 @@ class InfoRenderer:
     def _format_player_list_html(
         self, players: list["PlayerInfo"], total: int, server_name: str
     ) -> str:
-        """Format player list as HTML."""
+        """将玩家列表格式化为 HTML"""
         players_html = ""
         for p in players:
-            gamemode_emoji = {
-                "SURVIVAL": "⚔️",
-                "CREATIVE": "🎨",
-                "ADVENTURE": "🗺️",
-                "SPECTATOR": "👻",
-            }.get(p.game_mode, "❓")
+            modes = {
+                "SURVIVAL": ("生存", "⚔️"),
+                "CREATIVE": ("创造", "🎨"),
+                "ADVENTURE": ("冒险", "🗺️"),
+                "SPECTATOR": ("旁观", "👻"),
+            }
+            mode_name, mode_emoji = modes.get(p.game_mode, ("未知", "❓"))
 
             players_html += f"""
             <div class="player-item">
-                <span class="player-icon">{gamemode_emoji}</span>
+                <span class="player-icon">{mode_emoji}</span>
                 <span class="player-name">{escape(p.name)}</span>
                 <span class="player-info">{escape(p.world)} | {p.ping}ms</span>
             </div>
@@ -498,8 +508,8 @@ class InfoRenderer:
         """
 
     def _format_player_detail_html(self, player: "PlayerDetail") -> str:
-        """Format player detail as HTML."""
-        # Calculate health bar
+        """将玩家详情格式化为 HTML。"""
+        # 计算生命值条
         health_percent = (player.health / player.max_health) * 100
         health_color = (
             "#4caf50"
@@ -507,10 +517,18 @@ class InfoRenderer:
             else ("#ff9800" if health_percent > 25 else "#f44336")
         )
 
-        # Calculate food bar
+        # 计算饱食度条
         food_percent = (player.food_level / 20) * 100
 
         op_badge = '<span class="op-badge">⚡ 管理员</span>' if player.is_op else ""
+
+        modes = {
+            "SURVIVAL": "生存",
+            "CREATIVE": "创造",
+            "ADVENTURE": "冒险",
+            "SPECTATOR": "旁观",
+        }
+        mode_name = modes.get(player.game_mode, player.game_mode)
 
         return f"""
         <!DOCTYPE html>
@@ -606,7 +624,7 @@ class InfoRenderer:
                 </div>
                 <div class="stat-row">
                     <span class="stat-label">🎮 模式</span>
-                    <span>{escape(player.game_mode)}</span>
+                    <span>{escape(mode_name)}</span>
                 </div>
                 <div class="stat-row">
                     <span class="stat-label">⭐ 等级</span>

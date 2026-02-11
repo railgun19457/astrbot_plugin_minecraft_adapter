@@ -1,4 +1,4 @@
-"""User binding service for linking external platform users to MC players."""
+"""用户绑定服务，用于将外部平台用户与 MC 玩家关联"""
 
 import json
 from dataclasses import dataclass, field
@@ -9,17 +9,17 @@ from astrbot.api import logger
 
 @dataclass
 class UserBinding:
-    """Represents a binding between an external user and MC player."""
+    """表示外部用户与 MC 玩家之间的绑定"""
 
-    # External platform info
-    platform: str  # e.g., "aiocqhttp", "telegram"
-    user_id: str  # External platform user ID
-    # MC player info
+    # 外部平台信息
+    platform: str  # 例如 "aiocqhttp", "telegram"
+    user_id: str  # 外部平台用户 ID
+    # MC 玩家信息
     mc_player_name: str
     mc_player_uuid: str = ""
-    # Metadata
+    # 元数据
     created_at: int = 0
-    server_id: str = ""  # Optional: specific server binding
+    server_id: str = ""  # 可选：特定服务器绑定
 
     def to_dict(self) -> dict:
         return {
@@ -45,11 +45,11 @@ class UserBinding:
 
 @dataclass
 class BindingStorage:
-    """Storage for user bindings."""
+    """用户绑定的存储"""
 
-    # Key: "platform:user_id", Value: UserBinding
+    # 键: "platform:user_id", 值: UserBinding
     bindings: dict[str, UserBinding] = field(default_factory=dict)
-    # Reverse index: Key: mc_player_name (lowercase), Value: list of binding keys
+    # 反向索引: 键: mc_player_name (小写), 值: 绑定键列表
     mc_name_index: dict[str, list[str]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -63,7 +63,7 @@ class BindingStorage:
         for key, binding_data in data.get("bindings", {}).items():
             binding = UserBinding.from_dict(binding_data)
             storage.bindings[key] = binding
-            # Build index
+            # 构建索引
             mc_name_lower = binding.mc_player_name.lower()
             if mc_name_lower not in storage.mc_name_index:
                 storage.mc_name_index[mc_name_lower] = []
@@ -72,13 +72,13 @@ class BindingStorage:
 
 
 class BindingService:
-    """Service for managing user bindings."""
+    """用户绑定管理服务"""
 
     def __init__(self, data_dir: str | Path):
-        """Initialize binding service.
+        """初始化绑定服务
 
-        Args:
-            data_dir: Directory to store binding data
+        参数:
+            data_dir: 存储绑定数据的目录
         """
         self.data_dir = Path(data_dir)
         self.data_file = self.data_dir / "mc_bindings.json"
@@ -86,32 +86,32 @@ class BindingService:
         self._load()
 
     def _load(self):
-        """Load bindings from file."""
+        """从文件加载绑定"""
         if self.data_file.exists():
             try:
                 with open(self.data_file, encoding="utf-8") as f:
                     data = json.load(f)
                 self._storage = BindingStorage.from_dict(data)
                 logger.info(
-                    f"[BindingService] Loaded {len(self._storage.bindings)} bindings"
+                    f"[BindingService] 已加载 {len(self._storage.bindings)} 个绑定"
                 )
             except Exception as e:
-                logger.error(f"[BindingService] Failed to load bindings: {e}")
+                logger.error(f"[BindingService] 加载绑定失败: {e}")
                 self._storage = BindingStorage()
         else:
-            logger.info("[BindingService] No existing bindings file")
+            logger.info("[BindingService] 绑定文件不存在")
 
     def _save(self):
-        """Save bindings to file."""
+        """保存绑定到文件"""
         try:
             self.data_dir.mkdir(parents=True, exist_ok=True)
             with open(self.data_file, "w", encoding="utf-8") as f:
                 json.dump(self._storage.to_dict(), f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"[BindingService] Failed to save bindings: {e}")
+            logger.error(f"[BindingService] 保存绑定失败: {e}")
 
     def _make_key(self, platform: str, user_id: str) -> str:
-        """Create a unique key for a user."""
+        """创建用户的唯一键"""
         return f"{platform}:{user_id}"
 
     def bind(
@@ -122,16 +122,16 @@ class BindingService:
         mc_player_uuid: str = "",
         server_id: str = "",
     ) -> tuple[bool, str]:
-        """Bind an external user to a MC player.
+        """将外部用户绑定到 MC 玩家
 
-        Returns:
-            tuple: (success, message)
+        返回:
+            tuple: (成功, 消息)
         """
         import time
 
         key = self._make_key(platform, user_id)
 
-        # Check if already bound
+        # 检查是否已绑定
         if key in self._storage.bindings:
             existing = self._storage.bindings[key]
             return (
@@ -139,7 +139,7 @@ class BindingService:
                 f"你已经绑定了玩家 {existing.mc_player_name}，请先解绑",
             )
 
-        # Create binding
+        # 创建绑定
         binding = UserBinding(
             platform=platform,
             user_id=user_id,
@@ -149,24 +149,24 @@ class BindingService:
             server_id=server_id,
         )
 
-        # Store binding
+        # 存储绑定
         self._storage.bindings[key] = binding
 
-        # Update index
+        # 更新索引
         mc_name_lower = mc_player_name.lower()
         if mc_name_lower not in self._storage.mc_name_index:
             self._storage.mc_name_index[mc_name_lower] = []
         self._storage.mc_name_index[mc_name_lower].append(key)
 
         self._save()
-        logger.info(f"[BindingService] Bound {platform}:{user_id} -> {mc_player_name}")
+        logger.info(f"[BindingService] 已绑定 {platform}:{user_id} -> {mc_player_name}")
         return True, f"成功绑定玩家 {mc_player_name}"
 
     def unbind(self, platform: str, user_id: str) -> tuple[bool, str]:
-        """Unbind an external user.
+        """解绑外部用户
 
-        Returns:
-            tuple: (success, message)
+        返回:
+            tuple: (成功, 消息)
         """
         key = self._make_key(platform, user_id)
 
@@ -176,7 +176,7 @@ class BindingService:
         binding = self._storage.bindings[key]
         mc_name_lower = binding.mc_player_name.lower()
 
-        # Remove from index
+        # 从索引中移除
         if mc_name_lower in self._storage.mc_name_index:
             self._storage.mc_name_index[mc_name_lower] = [
                 k for k in self._storage.mc_name_index[mc_name_lower] if k != key
@@ -184,28 +184,28 @@ class BindingService:
             if not self._storage.mc_name_index[mc_name_lower]:
                 del self._storage.mc_name_index[mc_name_lower]
 
-        # Remove binding
+        # 移除绑定
         del self._storage.bindings[key]
 
         self._save()
         logger.info(
-            f"[BindingService] Unbound {platform}:{user_id} from {binding.mc_player_name}"
+            f"[BindingService] 已解绑 {platform}:{user_id} (原绑定玩家: {binding.mc_player_name})"
         )
         return True, f"成功解绑玩家 {binding.mc_player_name}"
 
     def get_binding(self, platform: str, user_id: str) -> UserBinding | None:
-        """Get binding for a user."""
+        """获取用户的绑定"""
         key = self._make_key(platform, user_id)
         return self._storage.bindings.get(key)
 
     def get_bindings_by_mc_name(self, mc_player_name: str) -> list[UserBinding]:
-        """Get all bindings for a MC player name.
+        """获取 MC 玩家名称的所有绑定。
 
-        Args:
-            mc_player_name: Minecraft player name (case-insensitive)
+        参数:
+            mc_player_name: Minecraft 玩家名称（不区分大小写）
 
-        Returns:
-            List of UserBinding objects for this player
+        返回:
+            该玩家的 UserBinding 对象列表
         """
         mc_name_lower = mc_player_name.lower()
         keys = self._storage.mc_name_index.get(mc_name_lower, [])
@@ -214,22 +214,22 @@ class BindingService:
         ]
 
     def get_all_bindings(self) -> list[UserBinding]:
-        """Get all bindings.
+        """获取所有绑定。
 
-        Returns:
-            List of all UserBinding objects
+        返回:
+            所有 UserBinding 对象的列表
         """
         return list(self._storage.bindings.values())
 
     def get_mc_player_name(self, platform: str, user_id: str) -> str | None:
-        """Get MC player name for a user (convenience method).
+        """获取用户的 MC 玩家名称（便捷方法）。
 
-        Args:
-            platform: Platform name
-            user_id: User ID on the platform
+        参数:
+            platform: 平台名称
+            user_id: 平台上的用户 ID
 
-        Returns:
-            MC player name if bound, None otherwise
+        返回:
+            如果已绑定则返回 MC 玩家名称，否则返回 None
         """
         binding = self.get_binding(platform, user_id)
         return binding.mc_player_name if binding else None

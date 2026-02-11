@@ -1,4 +1,4 @@
-"""Minecraft platform message event."""
+"""Minecraft 平台消息事件"""
 
 from astrbot.api.event import AstrMessageEvent, MessageChain
 from astrbot.api.message_components import Plain
@@ -9,7 +9,7 @@ from ..core.server_manager import ServerConnection
 
 
 class MCMessageEvent(AstrMessageEvent):
-    """Message event for Minecraft platform."""
+    """用于 Minecraft 平台的消息事件"""
 
     def __init__(
         self,
@@ -29,8 +29,8 @@ class MCMessageEvent(AstrMessageEvent):
         self.player_uuid = player_uuid
 
     async def send(self, message: MessageChain):
-        """Send response message back to Minecraft."""
-        # Extract text content from message chain
+        """将响应消息发送回 Minecraft"""
+        # 从消息链提取文本内容
         content_parts = []
         for component in message.chain:
             if isinstance(component, Plain):
@@ -41,10 +41,10 @@ class MCMessageEvent(AstrMessageEvent):
         if not content:
             return
 
-        # Determine target type based on chat mode
+        # 根据聊天模式确定目标类型
         target_type = "BROADCAST" if self.chat_mode == ChatMode.GROUP else "PLAYER"
 
-        # Send response via WebSocket
+        # 通过 WebSocket 发送响应
         await self.server_connection.ws_client.send_chat_response(
             reply_to=self.request_id,
             target_type=target_type,

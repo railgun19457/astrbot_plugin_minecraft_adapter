@@ -1,4 +1,4 @@
-"""Command handlers for Minecraft adapter plugin."""
+"""Minecraft 适配器插件的命令处理器"""
 
 import re
 import tempfile
@@ -16,22 +16,22 @@ if TYPE_CHECKING:
     from ..services.renderer import InfoRenderer
 
 
-# Command handler constants
+# 命令处理器常量
 DEFAULT_LOG_LINES = 100
 MAX_LOG_LINES = 1000
 MIN_LOG_LINES = 1
 
 
 class CustomCommandParser:
-    """Parser for custom command mappings."""
+    """自定义命令映射解析器"""
 
-    # Format: trigger <&arg1&> <&arg2&><<>>actual_command {sender} {arg1} {arg2}
+    # 格式: trigger <&arg1&> <&arg2&><<>>actual_command {sender} {arg1} {arg2}
     SEPARATOR = "<<>>"
 
     def __init__(self, mappings: list[str]):
-        """Initialize with mapping strings.
+        """使用映射字符串初始化
 
-        Format: "trigger <&param&><<>>actual_command {param} {sender}"
+        格式: "trigger <&param&><<>>actual_command {param} {sender}"
         """
         self.mappings: list[tuple[str, list[str], str]] = []
         for mapping in mappings:
@@ -40,10 +40,10 @@ class CustomCommandParser:
                 self.mappings.append(parsed)
 
     def _parse_mapping(self, mapping: str) -> tuple[str, list[str], str] | None:
-        """Parse a mapping string.
+        """解析映射字符串
 
-        Returns:
-            tuple: (trigger_pattern, param_names, command_template) or None
+        返回:
+            tuple: (trigger_pattern, param_names, command_template) 或 None
         """
         if self.SEPARATOR not in mapping:
             return None
@@ -52,12 +52,12 @@ class CustomCommandParser:
         trigger_part = trigger_part.strip()
         command_part = command_part.strip()
 
-        # Extract parameter placeholders from trigger: <&name&>
+        # 从触发器中提取参数占位符: <&name&>
         param_pattern = r"<&(\w+)&>"
         param_names = re.findall(param_pattern, trigger_part)
 
-        # Build regex pattern for matching trigger
-        # Replace <&name&> with named capture group
+        # 构建用于匹配触发器的正则表达式模式
+        # 将 <&name&> 替换为命名捕获组
         trigger_regex = trigger_part
         for param in param_names:
             trigger_regex = trigger_regex.replace(f"<&{param}&>", f"(?P<{param}>\\S+)")
@@ -67,19 +67,19 @@ class CustomCommandParser:
     def match(
         self, text: str, sender_mc_name: str | None = None
     ) -> tuple[str, dict] | None:
-        """Try to match input text against custom commands.
+        """尝试将输入文本与自定义命令匹配
 
-        Returns:
-            tuple: (actual_command, matched_params) or None
+        返回:
+            tuple: (actual_command, matched_params) 或 None
         """
         for trigger_regex, param_names, command_template in self.mappings:
             match = re.match(f"^{trigger_regex}$", text, re.IGNORECASE)
             if match:
                 params = match.groupdict()
-                # Add sender parameter
+                # 添加发送者参数
                 params["sender"] = sender_mc_name or ""
 
-                # Build actual command
+                # 构建实际命令
                 command = command_template
                 for key, value in params.items():
                     command = command.replace(f"{{{key}}}", value)
@@ -90,7 +90,7 @@ class CustomCommandParser:
 
 
 class CommandHandler:
-    """Handler for all mc commands."""
+    """所有 mc 命令的处理器"""
 
     def __init__(
         self,
@@ -106,15 +106,14 @@ class CommandHandler:
         self._custom_parsers: dict[str, CustomCommandParser] = {}
 
     def register_custom_commands(self, server_id: str, mappings: list[str]):
-        """Register custom commands for a server."""
+        """为服务器注册自定义命令"""
         self._custom_parsers[server_id] = CustomCommandParser(mappings)
         logger.info(
-            f"[CommandHandler] Registered {len(mappings)} custom commands "
-            f"for server {server_id}"
+            f"[CommandHandler] 已为服务器 {server_id} 注册了 {len(mappings)} 个自定义命令"
         )
 
     async def handle_help(self, event: AstrMessageEvent, server_id: str = ""):
-        """Show help message."""
+        """显示帮助信息"""
         help_text = """📖 Minecraft 适配器指令帮助
 
 基础指令:
@@ -138,13 +137,13 @@ class CommandHandler:
         yield event.plain_result(help_text)
 
     async def handle_status(self, event: AstrMessageEvent, server_id: str = ""):
-        """Show server status."""
+        """显示服务器状态"""
         server = self._get_server(server_id)
         if not server:
             yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
             return
 
-        # Get server info via REST API
+        # 通过 REST API 获取服务器信息
         info, err = await server.rest_client.get_server_info()
         if not info:
             yield event.plain_result(f"❌ 获取服务器信息失败: {err}")
@@ -155,7 +154,7 @@ class CommandHandler:
             yield event.plain_result(f"❌ 获取服务器状态失败: {err}")
             return
 
-        # Render result
+        # 渲染结果
         config = self.get_server_config(server.server_id)
         use_image = config.text2image if config else True
 
@@ -169,7 +168,7 @@ class CommandHandler:
             yield event.plain_result(result.text)
 
     async def handle_list(self, event: AstrMessageEvent, server_id: str = ""):
-        """Show online player list."""
+        """显示在线玩家列表"""
         server = self._get_server(server_id)
         if not server:
             yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
@@ -180,12 +179,12 @@ class CommandHandler:
             yield event.plain_result(f"❌ 获取玩家列表失败: {err}")
             return
 
-        # Get server name
+        # 获取服务器名称
         server_name = ""
         if server.server_info:
             server_name = server.server_info.name
 
-        # Render result
+        # 渲染结果
         config = self.get_server_config(server.server_id)
         use_image = config.text2image if config else True
 
@@ -201,7 +200,7 @@ class CommandHandler:
     async def handle_player(
         self, event: AstrMessageEvent, player_id: str, server_id: str = ""
     ):
-        """Show player detail."""
+        """显示玩家详细信息"""
         if not player_id:
             yield event.plain_result("❌ 请指定玩家ID")
             return
@@ -211,13 +210,13 @@ class CommandHandler:
             yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
             return
 
-        # Try by name first
+        # 首先通过名称尝试
         player, err = await server.rest_client.get_player_by_name(player_id)
         if not player:
             yield event.plain_result(f"❌ 获取玩家信息失败: {err}")
             return
 
-        # Render result
+        # 渲染结果
         config = self.get_server_config(server.server_id)
         use_image = config.text2image if config else True
 
@@ -231,7 +230,7 @@ class CommandHandler:
     async def handle_cmd(
         self, event: AstrMessageEvent, command: str, server_id: str = ""
     ):
-        """Execute remote command."""
+        """执行远程命令"""
         if not command:
             yield event.plain_result("❌ 请指定要执行的指令")
             return
@@ -246,12 +245,12 @@ class CommandHandler:
             yield event.plain_result("❌ 远程指令功能未启用")
             return
 
-        # Check command whitelist/blacklist
+        # 检查命令白名单/黑名单
         if not self._check_command_allowed(command, config):
             yield event.plain_result("❌ 此指令不在允许列表中")
             return
 
-        # Check for custom command mapping
+        # 检查自定义命令映射
         sender_mc_name = None
         if config.bind_enable:
             platform = event.get_platform_name()
@@ -265,7 +264,7 @@ class CommandHandler:
             if result:
                 command, _ = result
 
-        # Execute command
+        # 执行命令
         success, output, _ = await server.rest_client.execute_command(command)
 
         if success:
@@ -279,13 +278,13 @@ class CommandHandler:
         lines: int = DEFAULT_LOG_LINES,
         server_id: str = "",
     ):
-        """Query server logs."""
+        """查询服务器日志"""
         server = self._get_server(server_id)
         if not server:
             yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
             return
 
-        lines = min(max(MIN_LOG_LINES, lines), MAX_LOG_LINES)  # Clamp to 1-1000
+        lines = min(max(MIN_LOG_LINES, lines), MAX_LOG_LINES)  # 限制到 1-1000
 
         logs, err = await server.rest_client.get_logs(lines=lines)
         if err:
@@ -296,7 +295,7 @@ class CommandHandler:
             yield event.plain_result("📋 没有日志记录")
             return
 
-        # Format logs as text file
+        # 将日志格式化为文本文件
         log_content = []
         for log in logs:
             timestamp = datetime.fromtimestamp(log.timestamp / 1000).strftime(
@@ -306,7 +305,7 @@ class CommandHandler:
 
         log_text = "\n".join(log_content)
 
-        # Use NamedTemporaryFile with delete=False for manual cleanup after sending
+        # 使用 NamedTemporaryFile，设置 delete=False 以便发送后手动清理
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
@@ -325,16 +324,16 @@ class CommandHandler:
                 ]
             )
         finally:
-            # Clean up the temp file after sending
+            # 发送后清理临时文件
             try:
                 temp_path.unlink(missing_ok=True)
             except OSError as e:
-                logger.warning(f"[CommandHandler] Failed to cleanup temp file: {e}")
+                logger.warning(f"[CommandHandler] 无法清理临时文件: {e}")
 
     async def handle_bind(
         self, event: AstrMessageEvent, player_id: str, server_id: str = ""
     ):
-        """Bind user to MC player."""
+        """绑定用户到 MC 玩家"""
         if not player_id:
             yield event.plain_result("❌ 请指定要绑定的游戏ID")
             return
@@ -360,7 +359,7 @@ class CommandHandler:
             yield event.plain_result(f"❌ {message}")
 
     async def handle_unbind(self, event: AstrMessageEvent):
-        """Unbind user from MC player."""
+        """解绑用户与 MC 玩家的绑定"""
         platform = event.get_platform_name()
         user_id = event.get_sender_id()
 
@@ -375,20 +374,20 @@ class CommandHandler:
             yield event.plain_result(f"❌ {message}")
 
     def _get_server(self, server_id: str = ""):
-        """Get server connection by ID, or first connected server if not specified."""
+        """通过 ID 获取服务器连接，或如果未指定则获取第一个已连接的服务器"""
         if server_id:
             server = self.server_manager.get_server(server_id)
             if server and server.connected:
                 return server
             return None
 
-        # Return first connected server
+        # 返回第一个已连接的服务器
         connected = self.server_manager.get_connected_servers()
         return connected[0] if connected else None
 
     def _check_command_allowed(self, command: str, config) -> bool:
-        """Check if command is allowed by whitelist/blacklist."""
-        # Extract command name (first word)
+        """检查命令是否在白名单/黑名单中允许"""
+        # 提取命令名（第一个单词）
         parts = command.split()
         if not parts:
             return False
@@ -397,8 +396,8 @@ class CommandHandler:
         cmd_list = [c.lower() for c in config.cmd_list]
 
         if config.cmd_white_black_list == "white":
-            # Whitelist mode: only allowed if in list
+            # 白名单模式：仅在列表中则允许
             return cmd_name in cmd_list
         else:
-            # Blacklist mode: allowed if NOT in list
+            # 黑名单模式：不在列表中则允许
             return cmd_name not in cmd_list

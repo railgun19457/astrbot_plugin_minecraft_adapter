@@ -1,10 +1,10 @@
-"""Minecraft platform adapter for AI chat."""
+"""Minecraft 平台适配器，用于 AI 聊天"""
 
 import asyncio
 
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
-from astrbot.api.message_components import Plain
+from astrbot.api.message_components import At, Plain
 from astrbot.api.platform import (
     AstrBotMessage,
     MessageMember,
@@ -27,7 +27,7 @@ from .event import MCMessageEvent
 
 
 class MCPlatformAdapter(Platform):
-    """Platform adapter for a Minecraft server."""
+    """用于 Minecraft 服务器的平台适配器"""
 
     def __init__(
         self,
@@ -35,7 +35,7 @@ class MCPlatformAdapter(Platform):
         server_connection: ServerConnection,
         event_queue: asyncio.Queue,
     ):
-        super().__init__(event_queue)
+        super().__init__({}, event_queue)
         self.server_config = server_config
         self.server_connection = server_connection
         self._platform_name = f"minecraft_{server_config.server_id}"
@@ -45,13 +45,14 @@ class MCPlatformAdapter(Platform):
         return PlatformMetadata(
             name=self._platform_name,
             description=f"Minecraft Server: {self.server_config.server_id}",
+            id=self._platform_name,
         )
 
     async def send_by_session(
         self, session: MessageSesion, message_chain: MessageChain
     ):
-        """Send message by session."""
-        # Extract text content
+        """通过会话发送消息"""
+        # 提取文本内容
         content_parts = []
         for component in message_chain.chain:
             if isinstance(component, Plain):
@@ -61,22 +62,22 @@ class MCPlatformAdapter(Platform):
         if not content:
             return
 
-        # Parse session format: minecraft_serverid:MessageType:identifier
-        # Examples:
+        # 解析会话格式: minecraft_serverid:MessageType:identifier
+        # 示例:
         #   - minecraft_survival:FriendMessage:550e8400-e29b-41d4-a716-446655440000
         #   - minecraft_survival:GroupMessage:Server
         session_parts = session.session_id.split(":", 2)
 
         if len(session_parts) < 3:
             logger.warning(
-                f"[MC-{self.server_config.server_id}] Invalid session format: {session.session_id}"
+                f"[MC-{self.server_config.server_id}] 无效的会话格式: {session.session_id}"
             )
             return
 
         _, msg_type, identifier = session_parts
 
         if msg_type == "FriendMessage":
-            # Private message to specific player
+            # 私聊给特定玩家
             await self.server_connection.ws_client.send_chat_response(
                 reply_to="",
                 target_type="PLAYER",
@@ -85,7 +86,7 @@ class MCPlatformAdapter(Platform):
                 player_uuid=identifier,
             )
         else:
-            # Broadcast message (GroupMessage or other types)
+            # 广播消息 (群聊消息或其他类型)
             await self.server_connection.ws_client.send_chat_response(
                 reply_to="",
                 target_type="BROADCAST",
@@ -96,23 +97,23 @@ class MCPlatformAdapter(Platform):
         await super().send_by_session(session, message_chain)
 
     async def run(self):
-        """Main run loop - this is managed by the plugin, not the platform."""
+        """主运行循环 - 由插件管理，而不是平台"""
         self._running = True
-        logger.info(f"[MC-{self.server_config.server_id}] Platform adapter started")
-        # The actual connection is managed by ServerManager
-        # This method just keeps the platform "alive"
-        # Use asyncio.Event for proper async waiting
+        logger.info(f"[MC-{self.server_config.server_id}] 平台适配器已启动")
+        # 实际连接由 ServerManager 管理
+        # 此方法只是保持平台“活着”
+        # 使用 asyncio.Event 进行正确的异步等待
         self._stop_event = asyncio.Event()
         await self._stop_event.wait()
 
     async def stop(self):
-        """Stop the platform adapter."""
+        """停止平台适配器"""
         self._running = False
         if hasattr(self, "_stop_event"):
             self._stop_event.set()
 
     async def handle_chat_request(self, msg: MCMessage):
-        """Handle incoming chat request from Minecraft."""
+        """处理来自 Minecraft 的聊天请求"""
         if not self.server_config.enable_ai_chat:
             return
 
@@ -130,10 +131,10 @@ class MCPlatformAdapter(Platform):
         player_uuid = msg.source.player_uuid
         player_name = msg.source.player_name
 
-        # Create AstrBotMessage
+        # 创建 AstrBotMessage
         abm = AstrBotMessage()
 
-        # Set message type based on chat mode
+        # 根据聊天模式设置消息类型
         if chat_mode == ChatMode.PRIVATE:
             abm.type = MessageType.FRIEND_MESSAGE
             abm.session_id = f"{self._platform_name}:FriendMessage:{player_uuid}"
@@ -145,11 +146,14 @@ class MCPlatformAdapter(Platform):
         abm.self_id = self.server_config.server_id
         abm.message_id = msg.id
         abm.sender = MessageMember(user_id=player_uuid, nickname=player_name)
-        abm.message = [Plain(text=content)]
+        if chat_mode == ChatMode.GROUP:
+            abm.message = [At(qq=abm.self_id), Plain(text=content)]
+        else:
+            abm.message = [Plain(text=content)]
         abm.message_str = content
         abm.raw_message = msg.payload
 
-        # Create event
+        # 创建事件
         event = MCMessageEvent(
             message_str=content,
             message_obj=abm,
@@ -161,9 +165,9 @@ class MCPlatformAdapter(Platform):
             player_uuid=player_uuid,
         )
 
-        # Commit event to queue
+        # 将事件提交到队列
         self.commit_event(event)
         logger.debug(
             f"[MC-{self.server_config.server_id}] "
-            f"Chat request from {player_name}: {content[:50]}..."
+            f"来自 {player_name} 的聊天请求: {content[:50]}..."
         )

@@ -1,4 +1,4 @@
-"""Server manager for handling multiple Minecraft server connections."""
+"""Minecraft 服务器连接管理器"""
 
 import asyncio
 from collections.abc import Callable, Coroutine
@@ -12,7 +12,7 @@ from .ws_client import WebSocketClient
 
 
 class ServerConnection:
-    """Represents a connection to a single Minecraft server."""
+    """表示与单个 Minecraft 服务器的连接"""
 
     def __init__(
         self,
@@ -27,7 +27,7 @@ class ServerConnection:
         self._on_connect = on_connect
         self._on_disconnect = on_disconnect
 
-        # Create clients
+        # 创建客户端
         self.ws_client = WebSocketClient(
             server_id=config.server_id,
             host=config.host,
@@ -72,13 +72,13 @@ class ServerConnection:
             await self._on_disconnect(self.server_id, reason)
 
     async def start(self):
-        """Start the server connection."""
+        """启动服务器连接"""
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self.ws_client.start())
-            logger.info(f"[MC-{self.server_id}] Connection task started")
+            logger.info(f"[MC-{self.server_id}] 连接任务已启动")
 
     async def stop(self):
-        """Stop the server connection."""
+        """停止服务器连接"""
         await self.ws_client.disconnect()
         await self.rest_client.close()
 
@@ -89,11 +89,11 @@ class ServerConnection:
             except asyncio.CancelledError:
                 pass
 
-        logger.info(f"[MC-{self.server_id}] Connection stopped")
+        logger.info(f"[MC-{self.server_id}] 连接已停止")
 
 
 class ServerManager:
-    """Manages connections to multiple Minecraft servers."""
+    """管理多个 Minecraft 服务器连接"""
 
     def __init__(self):
         self._servers: dict[str, ServerConnection] = {}
@@ -110,25 +110,25 @@ class ServerManager:
     def set_message_handler(
         self, handler: Callable[[str, MCMessage], Coroutine[Any, Any, None]]
     ):
-        """Set the handler for incoming messages."""
+        """设置传入消息的处理器"""
         self._on_message = handler
 
     def set_connect_handler(
         self, handler: Callable[[str, ServerInfo], Coroutine[Any, Any, None]]
     ):
-        """Set the handler for connection events."""
+        """设置连接事件的处理器"""
         self._on_connect = handler
 
     def set_disconnect_handler(
         self, handler: Callable[[str, str], Coroutine[Any, Any, None]]
     ):
-        """Set the handler for disconnect events."""
+        """设置断开连接事件的处理器"""
         self._on_disconnect = handler
 
     def add_server(self, config: ServerConfig) -> bool:
-        """Add a server configuration."""
+        """添加服务器配置"""
         if config.server_id in self._servers:
-            logger.warning(f"[ServerManager] Server {config.server_id} already exists")
+            logger.warning(f"[ServerManager] 服务器 {config.server_id} 已存在")
             return False
 
         connection = ServerConnection(
@@ -138,43 +138,43 @@ class ServerManager:
             on_disconnect=self._on_disconnect,
         )
         self._servers[config.server_id] = connection
-        logger.info(f"[ServerManager] Added server: {config.server_id}")
+        logger.info(f"[ServerManager] 已添加服务器: {config.server_id}")
         return True
 
     def remove_server(self, server_id: str) -> bool:
-        """Remove a server configuration."""
+        """移除服务器配置"""
         if server_id not in self._servers:
             return False
 
         del self._servers[server_id]
-        logger.info(f"[ServerManager] Removed server: {server_id}")
+        logger.info(f"[ServerManager] 已移除服务器: {server_id}")
         return True
 
     def get_server(self, server_id: str) -> ServerConnection | None:
-        """Get a server connection by ID."""
+        """通过 ID 获取服务器连接"""
         return self._servers.get(server_id)
 
     def get_all_servers(self) -> dict[str, ServerConnection]:
-        """Get all server connections."""
+        """获取所有服务器连接"""
         return self._servers.copy()
 
     def get_connected_servers(self) -> list[ServerConnection]:
-        """Get all connected servers."""
+        """获取所有已连接的服务器"""
         return [s for s in self._servers.values() if s.connected]
 
     async def start_all(self):
-        """Start all server connections."""
+        """启动所有服务器连接"""
         for server in self._servers.values():
             if server.config.enabled:
                 await server.start()
 
     async def stop_all(self):
-        """Stop all server connections."""
+        """停止所有服务器连接"""
         for server in self._servers.values():
             await server.stop()
 
     async def start_server(self, server_id: str) -> bool:
-        """Start a specific server connection."""
+        """启动特定的服务器连接"""
         server = self._servers.get(server_id)
         if server:
             await server.start()
@@ -182,14 +182,14 @@ class ServerManager:
         return False
 
     async def stop_server(self, server_id: str) -> bool:
-        """Stop a specific server connection."""
+        """停止特定的服务器连接"""
         server = self._servers.get(server_id)
         if server:
             await server.stop()
             return True
         return False
 
-    # Convenience methods for sending messages
+    # 发送消息的便捷方法
 
     async def send_chat_response(
         self,
@@ -200,7 +200,7 @@ class ServerManager:
         content: str,
         player_uuid: str = "",
     ) -> bool:
-        """Send AI chat response to a server."""
+        """向服务器发送 AI 聊天响应"""
         server = self._servers.get(server_id)
         if server and server.connected:
             return await server.ws_client.send_chat_response(
@@ -220,7 +220,7 @@ class ServerManager:
         user_name: str,
         content: str,
     ) -> bool:
-        """Send incoming message from external platform to MC server."""
+        """将来自外部平台的消息发送到 MC 服务器"""
         server = self._servers.get(server_id)
         if server and server.connected:
             return await server.ws_client.send_incoming_message(

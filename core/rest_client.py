@@ -1,4 +1,4 @@
-"""REST API client for Minecraft server communication."""
+"""Minecraft 服务器通信的 REST API 客户端"""
 
 from typing import Any
 
@@ -15,14 +15,14 @@ from .models import (
     ServerStatus,
 )
 
-# REST API constants
-DEFAULT_REQUEST_TIMEOUT = 30  # Default request timeout in seconds
-HEALTH_CHECK_TIMEOUT = 5  # Health check timeout in seconds
-MAX_LOG_LINES = 1000  # Maximum log lines to retrieve
+# REST API 常量
+DEFAULT_REQUEST_TIMEOUT = 30  # 默认请求超时（秒）
+HEALTH_CHECK_TIMEOUT = 5  # 健康检查超时（秒）
+MAX_LOG_LINES = 1000  # 最大日志行数
 
 
 class RestClient:
-    """REST API client for communicating with Minecraft server."""
+    """与 Minecraft 服务器通信的 REST API 客户端"""
 
     def __init__(
         self,
@@ -56,7 +56,7 @@ class RestClient:
         return self._session
 
     async def close(self):
-        """Close the HTTP session."""
+        """关闭 HTTP 会话"""
         if self._session and not self._session.closed:
             await self._session.close()
             self._session = None
@@ -68,7 +68,7 @@ class RestClient:
         params: dict | None = None,
         json_data: dict | None = None,
     ) -> ApiResponse:
-        """Make HTTP request to the server."""
+        """向服务器发送 HTTP 请求"""
         url = f"{self.base_url}{endpoint}"
 
         try:
@@ -85,13 +85,13 @@ class RestClient:
                 return ApiResponse.from_dict(data)
 
         except aiohttp.ClientConnectorError:
-            logger.error(f"[MC-{self.server_id}] Cannot connect to server")
+            logger.error(f"[MC-{self.server_id}] 无法连接到服务器")
             return ApiResponse(code=3002, message="服务器连接失败")
         except TimeoutError:
-            logger.error(f"[MC-{self.server_id}] Request timeout")
+            logger.error(f"[MC-{self.server_id}] 请求超时")
             return ApiResponse(code=3002, message="请求超时")
         except Exception as e:
-            logger.error(f"[MC-{self.server_id}] Request error: {e}")
+            logger.error(f"[MC-{self.server_id}] 请求错误: {e}")
             return ApiResponse(code=3001, message=str(e))
 
     async def _get(self, endpoint: str, params: dict | None = None) -> ApiResponse:
@@ -100,24 +100,24 @@ class RestClient:
     async def _post(self, endpoint: str, json_data: dict | None = None) -> ApiResponse:
         return await self._request("POST", endpoint, json_data=json_data)
 
-    # Server APIs
+    # 服务器 APIs
 
     async def get_server_info(self) -> tuple[ServerInfo | None, str]:
-        """Get server information."""
+        """获取服务器信息"""
         resp = await self._get("/server/info")
         if resp.success and resp.data:
             return ServerInfo.from_dict(resp.data), ""
         return None, resp.message
 
     async def get_server_status(self) -> tuple[ServerStatus | None, str]:
-        """Get server status."""
+        """获取服务器状态"""
         resp = await self._get("/server/status")
         if resp.success and resp.data:
             return ServerStatus.from_dict(resp.data), ""
         return None, resp.message
 
     async def health_check(self) -> bool:
-        """Check if server is healthy (no auth required)."""
+        """检查服务器是否健康（不需要认证）"""
         try:
             session = await self._get_session()
             url = f"http://{self.host}:{self.port}/api/v1/health"
@@ -129,12 +129,12 @@ class RestClient:
         except Exception:
             return False
 
-    # Player APIs
+    # 玩家 APIs
 
     async def get_players(
         self, page: int = 1, size: int = 20
     ) -> tuple[list[PlayerInfo], int, str]:
-        """Get online player list."""
+        """获取在线玩家列表"""
         resp = await self._get("/players", params={"page": page, "size": size})
         if resp.success and resp.data:
             players = [PlayerInfo.from_dict(p) for p in resp.data.get("players", [])]
@@ -143,20 +143,20 @@ class RestClient:
         return [], 0, resp.message
 
     async def get_player_by_uuid(self, uuid: str) -> tuple[PlayerDetail | None, str]:
-        """Get player detail by UUID."""
+        """通过 UUID 获取玩家详细信息"""
         resp = await self._get(f"/players/{uuid}")
         if resp.success and resp.data:
             return PlayerDetail.from_dict(resp.data), ""
         return None, resp.message
 
     async def get_player_by_name(self, name: str) -> tuple[PlayerDetail | None, str]:
-        """Get player detail by name."""
+        """通过名称获取玩家详细信息"""
         resp = await self._get(f"/players/name/{name}")
         if resp.success and resp.data:
             return PlayerDetail.from_dict(resp.data), ""
         return None, resp.message
 
-    # Command APIs
+    # 命令 APIs
 
     async def execute_command(
         self,
@@ -165,10 +165,10 @@ class RestClient:
         player_uuid: str | None = None,
         is_async: bool = False,
     ) -> tuple[bool, str, Any]:
-        """Execute a command on the server.
+        """在服务器上执行命令
 
-        Returns:
-            tuple: (success, output/error_message, raw_data)
+        返回:
+            tuple: (成功, 输出/错误消息, 原始数据)
         """
         json_data: dict[str, Any] = {
             "command": command,
@@ -191,7 +191,7 @@ class RestClient:
 
         return False, resp.message, None
 
-    # Log APIs
+    # 日志 APIs
 
     async def get_logs(
         self,
@@ -201,7 +201,7 @@ class RestClient:
         start_time: int | None = None,
         end_time: int | None = None,
     ) -> tuple[list[LogEntry], str]:
-        """Get server logs."""
+        """获取服务器日志"""
         params: dict[str, Any] = {"lines": min(lines, MAX_LOG_LINES)}
         if level:
             params["level"] = level

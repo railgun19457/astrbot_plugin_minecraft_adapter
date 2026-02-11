@@ -1,4 +1,4 @@
-"""WebSocket client for Minecraft server communication."""
+"""Minecraft 服务器通信的 WebSocket 客户端"""
 
 import asyncio
 import time
@@ -12,15 +12,15 @@ from astrbot.api import logger
 
 from .models import MCMessage, MessageType, ServerInfo
 
-# Connection constants
-DEFAULT_RECONNECT_DELAY = 1  # Initial reconnect delay in seconds
-MAX_RECONNECT_DELAY = 60  # Maximum reconnect delay in seconds
-DEFAULT_HEARTBEAT_INTERVAL = 30  # Heartbeat interval in seconds
-CONNECTION_TIMEOUT = 10  # Connection timeout in seconds
+# 连接常量
+DEFAULT_RECONNECT_DELAY = 1  # 初始重连延迟（秒）
+MAX_RECONNECT_DELAY = 60  # 最大重连延迟（秒）
+DEFAULT_HEARTBEAT_INTERVAL = 30  # 心跳间隔（秒）
+CONNECTION_TIMEOUT = 10  # 连接超时（秒）
 
 
 class WebSocketClient:
-    """WebSocket client for communicating with Minecraft server."""
+    """与 Minecraft 服务器通信的 WebSocket 客户端"""
 
     def __init__(
         self,
@@ -66,7 +66,7 @@ class WebSocketClient:
         return f"ws://{self.host}:{self.port}/ws?token={self.token}"
 
     async def connect(self) -> bool:
-        """Establish WebSocket connection."""
+        """建立 WebSocket 连接"""
         if self._connected:
             return True
 
@@ -74,13 +74,13 @@ class WebSocketClient:
             if self._session is None:
                 self._session = aiohttp.ClientSession()
 
-            logger.info(f"[MC-{self.server_id}] Connecting to {self.host}:{self.port}")
+            logger.info(f"[MC-{self.server_id}] 正在连接到 {self.host}:{self.port}")
             self._ws = await self._session.ws_connect(
                 self.ws_url,
                 heartbeat=self._heartbeat_interval,
             )
 
-            # Wait for CONNECTION_ACK
+            # 等待 CONNECTION_ACK
             msg = await asyncio.wait_for(self._ws.receive(), timeout=CONNECTION_TIMEOUT)
             if msg.type == aiohttp.WSMsgType.TEXT:
                 data = msg.json()
@@ -89,10 +89,10 @@ class WebSocketClient:
                     server_data = data.get("data", {}).get("serverInfo", {})
                     self._server_info = ServerInfo.from_dict(server_data)
                     self._connected = True
-                    self._reconnect_delay = DEFAULT_RECONNECT_DELAY  # Reset on success
+                    self._reconnect_delay = DEFAULT_RECONNECT_DELAY  # 成功后重置
 
                     logger.info(
-                        f"[MC-{self.server_id}] Connected to {self._server_info.name} "
+                        f"[MC-{self.server_id}] 已连接到 {self._server_info.name} "
                         f"({self._server_info.platform} {self._server_info.minecraft_version})"
                     )
 
@@ -101,20 +101,18 @@ class WebSocketClient:
 
                     return True
 
-            logger.error(
-                f"[MC-{self.server_id}] Failed to receive CONNECTION_ACK: {msg}"
-            )
+            logger.error(f"[MC-{self.server_id}] 接收 CONNECTION_ACK 失败: {msg}")
             return False
 
         except asyncio.TimeoutError:
-            logger.error(f"[MC-{self.server_id}] Connection timeout")
+            logger.error(f"[MC-{self.server_id}] 连接超时")
             return False
         except Exception as e:
-            logger.error(f"[MC-{self.server_id}] Connection failed: {e}")
+            logger.error(f"[MC-{self.server_id}] 连接失败: {e}")
             return False
 
     async def disconnect(self):
-        """Close WebSocket connection."""
+        """关闭 WebSocket 连接"""
         self._running = False
         self._connected = False
 
@@ -130,20 +128,20 @@ class WebSocketClient:
             await self._session.close()
             self._session = None
 
-        logger.info(f"[MC-{self.server_id}] Disconnected")
+        logger.info(f"[MC-{self.server_id}] 已断开连接")
 
     async def start(self):
-        """Start the WebSocket client with automatic reconnection."""
+        """启动 WebSocket 客户端，带有自动重连"""
         self._running = True
 
         while self._running:
             if not self._connected:
                 success = await self.connect()
                 if not success:
-                    # Exponential backoff for reconnection
+                    # 重连的指数退避
                     logger.info(
                         f"[MC-{self.server_id}] "
-                        f"Reconnecting in {self._reconnect_delay}s..."
+                        f"将在 {self._reconnect_delay}秒后尝试重连..."
                     )
                     await asyncio.sleep(self._reconnect_delay)
                     self._reconnect_delay = min(
@@ -151,24 +149,24 @@ class WebSocketClient:
                     )
                     continue
 
-            # Start heartbeat task
+            # 启动心跳任务
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
-            # Message receiving loop
+            # 消息接收循环
             try:
                 await self._receive_loop()
             except Exception as e:
-                logger.error(f"[MC-{self.server_id}] Receive loop error: {e}")
+                logger.error(f"[MC-{self.server_id}] 接收循环异常: {e}")
             finally:
                 self._connected = False
                 if self._heartbeat_task:
                     self._heartbeat_task.cancel()
 
                 if self.on_disconnect and self._running:
-                    await self.on_disconnect("Connection lost")
+                    await self.on_disconnect("连接丢失")
 
     async def _receive_loop(self):
-        """Main message receiving loop."""
+        """主消息接收循环"""
         if not self._ws:
             return
 
@@ -179,64 +177,65 @@ class WebSocketClient:
                     mc_msg = MCMessage.from_dict(data)
                     await self._handle_message(mc_msg)
                 except Exception as e:
-                    logger.error(f"[MC-{self.server_id}] Error parsing message: {e}")
+                    logger.error(f"[MC-{self.server_id}] 解析消息异常: {e}")
 
             elif msg.type == aiohttp.WSMsgType.ERROR:
-                logger.error(f"[MC-{self.server_id}] WebSocket error: {msg.data}")
+                logger.error(f"[MC-{self.server_id}] WebSocket 错误: {msg.data}")
                 break
 
             elif msg.type == aiohttp.WSMsgType.CLOSED:
-                logger.info(f"[MC-{self.server_id}] WebSocket closed")
+                logger.info(f"[MC-{self.server_id}] WebSocket 已关闭")
                 break
 
     async def _handle_message(self, msg: MCMessage):
-        """Handle incoming WebSocket message.
+        """
+        处理传入的 WebSocket 消息。
 
-        Args:
-            msg: The MCMessage object to process
+        参数:
+            msg: 要处理的 MCMessage 对象
 
-        Note:
-            Handles different message types including heartbeat, disconnect,
-            error messages, and forwards other types to the registered handler.
+        注意:
+            处理不同类型的消息，包括心跳、断开连接、错误消息，
+            并将其他类型转发给注册的处理器。
         """
         if msg.type == MessageType.HEARTBEAT:
-            # Respond to server heartbeat
+            # 响应服务器心跳
             await self._send_heartbeat_ack(msg.id)
 
         elif msg.type == MessageType.HEARTBEAT_ACK:
-            # Heartbeat acknowledged
+            # 心跳已确认
             pass
 
         elif msg.type == MessageType.DISCONNECT:
-            reason = msg.payload.get("reason", "Unknown")
+            reason = msg.payload.get("reason", "未知")
             message = msg.payload.get("message", "")
             logger.warning(
-                f"[MC-{self.server_id}] Server disconnect: {reason} - {message}"
+                f"[MC-{self.server_id}] 服务器断开连接: {reason} - {message}"
             )
             self._connected = False
 
         elif msg.type == MessageType.ERROR:
             code = msg.payload.get("code", 0)
             error_msg = msg.payload.get("message", "")
-            logger.error(f"[MC-{self.server_id}] Error {code}: {error_msg}")
+            logger.error(f"[MC-{self.server_id}] 错误 {code}: {error_msg}")
 
         else:
-            # Forward to message handler
+            # 转发到消息处理器
             if self.on_message:
                 try:
                     await self.on_message(msg)
                 except Exception as e:
-                    logger.error(f"[MC-{self.server_id}] Error in message handler: {e}")
+                    logger.error(f"[MC-{self.server_id}] 消息处理器异常: {e}")
 
     async def _heartbeat_loop(self):
-        """Send periodic heartbeats."""
+        """定期发送心跳。"""
         while self._connected and self._running:
             await asyncio.sleep(self._heartbeat_interval)
             if self._connected:
                 await self._send_heartbeat()
 
     async def _send_heartbeat(self):
-        """Send heartbeat message."""
+        """发送心跳消息"""
         msg = {
             "type": MessageType.HEARTBEAT.value,
             "id": str(uuid.uuid4()),
@@ -245,7 +244,7 @@ class WebSocketClient:
         await self._send(msg)
 
     async def _send_heartbeat_ack(self, msg_id: str):
-        """Send heartbeat acknowledgment."""
+        """发送心跳确认"""
         msg = {
             "type": MessageType.HEARTBEAT_ACK.value,
             "id": msg_id,
@@ -254,7 +253,7 @@ class WebSocketClient:
         await self._send(msg)
 
     async def _send(self, data: dict) -> bool:
-        """Send JSON data over WebSocket."""
+        """通过 WebSocket 发送 JSON 数据"""
         if not self._ws or self._ws.closed:
             return False
 
@@ -262,11 +261,11 @@ class WebSocketClient:
             await self._ws.send_json(data)
             return True
         except Exception as e:
-            logger.error(f"[MC-{self.server_id}] Send error: {e}")
+            logger.error(f"[MC-{self.server_id}] 发送错误: {e}")
             return False
 
     async def send_message(self, msg: MCMessage) -> bool:
-        """Send a MCMessage over WebSocket."""
+        """通过 WebSocket 发送 MCMessage"""
         return await self._send(msg.to_dict())
 
     async def send_chat_response(
@@ -279,7 +278,7 @@ class WebSocketClient:
         success: bool = True,
         error_message: str = "",
     ) -> bool:
-        """Send AI chat response."""
+        """发送 AI 聊天响应"""
         msg = {
             "type": MessageType.CHAT_RESPONSE.value,
             "id": str(uuid.uuid4()),
@@ -310,7 +309,7 @@ class WebSocketClient:
         target_type: str = "BROADCAST",
         player_uuid: str = "",
     ) -> bool:
-        """Send incoming message from external platform to MC server."""
+        """将来自外部平台的消息发送到 MC 服务器"""
         msg = {
             "type": MessageType.MESSAGE_INCOMING.value,
             "id": str(uuid.uuid4()),
@@ -339,7 +338,7 @@ class WebSocketClient:
         executor: str = "CONSOLE",
         player_uuid: str | None = None,
     ) -> bool:
-        """Send command execution request."""
+        """发送命令执行请求"""
         msg = {
             "type": MessageType.COMMAND_REQUEST.value,
             "id": str(uuid.uuid4()),

@@ -1,4 +1,4 @@
-# Core module for Minecraft adapter
+# Minecraft 适配器的核心模块
 from .models import (
     ChatMode,
     LogEntry,

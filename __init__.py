@@ -1,8 +1,8 @@
-# AstrBot Minecraft Adapter Plugin
-"""Minecraft server adapter plugin for AstrBot.
+# AstrBot Minecraft 适配器插件
+"""AstrBot 的 Minecraft 服务器适配器插件
 
-This plugin enables communication between Minecraft servers and AstrBot,
-providing AI chat, message forwarding, and server management features.
+本插件实现了 Minecraft 服务器与 AstrBot 之间的通信，
+提供 AI 聊天、消息转发和服务器管理功能。
 """
 
 from .main import MinecraftAdapterPlugin

@@ -93,14 +93,15 @@ class ServerInfo:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ServerInfo":
+        version = data.get("minecraftVersion", data.get("version", ""))
         return cls(
             name=data.get("name", ""),
             platform=data.get("platform", ""),
-            platform_version=data.get("platformVersion", ""),
-            minecraft_version=data.get("minecraftVersion", ""),
+            platform_version=data.get("platformVersion", version),
+            minecraft_version=version,
             motd=data.get("motd", ""),
             max_players=data.get("maxPlayers", 0),
-            online_count=data.get("onlineCount", 0),
+            online_count=data.get("onlineCount", data.get("onlinePlayers", 0)),
             uptime=data.get("uptime", 0),
             uptime_formatted=data.get("uptimeFormatted", ""),
         )
@@ -125,7 +126,7 @@ class PlayerInfo:
             name=data.get("name", ""),
             display_name=data.get("displayName", ""),
             ping=data.get("ping", 0),
-            world=data.get("world", ""),
+            world=data.get("world", "未知"),
             game_mode=data.get("gameMode", ""),
             is_op=data.get("isOp", False),
         )
@@ -286,9 +287,8 @@ class ServerConfig:
     forward_chat_to_astrbot: bool = True
     forward_chat_format: str = "<{player}> {message}"
     forward_join_leave_to_astrbot: bool = False
-    forward_target_session: list[str] = field(default_factory=list)
+    target_sessions: list[str] = field(default_factory=list)
     auto_forward_prefix: str = "*"
-    auto_forward_sessions: list[str] = field(default_factory=list)
     mark_option: str = "emoji"
     # 命令配置
     cmd_enabled: bool = True
@@ -318,9 +318,8 @@ class ServerConfig:
             forward_join_leave_to_astrbot=message.get(
                 "forward_join_leave_to_astrbot", False
             ),
-            forward_target_session=message.get("forward_target_session", []),
+            target_sessions=message.get("target_sessions", []),
             auto_forward_prefix=message.get("auto_forward_prefix", "*"),
-            auto_forward_sessions=message.get("auto_forward_sessions", []),
             mark_option=message.get("mark_option", "emoji"),
             cmd_enabled=cmd.get("enabled", True),
             cmd_white_black_list=cmd.get("cmd_white_black_list", "white"),
@@ -342,6 +341,10 @@ class ServerStatus:
     memory_max: int = 0
     memory_free: int = 0
     memory_usage_percent: float = 0.0
+    online_players: int = 0
+    max_players: int = 0
+    uptime: int = 0
+    uptime_formatted: str = ""
     worlds: list[dict] = field(default_factory=list)
     plugins_total: int = 0
     plugins_enabled: int = 0
@@ -352,15 +355,33 @@ class ServerStatus:
         memory = data.get("memory", {})
         plugins = data.get("plugins", {})
 
+        tps_1m = tps.get("tps1m", tps.get("1m", 0.0))
+        tps_5m = tps.get("tps5m", tps.get("5m", 0.0))
+        tps_15m = tps.get("tps15m", tps.get("15m", 0.0))
+
+        memory_used = memory.get("used", 0)
+        memory_max = memory.get("max", memory.get("total", 0))
+        memory_free = memory.get("free", max(memory_max - memory_used, 0))
+        if memory_max:
+            memory_usage_percent = memory.get(
+                "usagePercent", (memory_used / memory_max) * 100
+            )
+        else:
+            memory_usage_percent = memory.get("usagePercent", 0.0)
+
         return cls(
             online=True,
-            tps_1m=tps.get("tps1m", 0.0),
-            tps_5m=tps.get("tps5m", 0.0),
-            tps_15m=tps.get("tps15m", 0.0),
-            memory_used=memory.get("used", 0),
-            memory_max=memory.get("max", 0),
-            memory_free=memory.get("free", 0),
-            memory_usage_percent=memory.get("usagePercent", 0.0),
+            tps_1m=tps_1m,
+            tps_5m=tps_5m,
+            tps_15m=tps_15m,
+            memory_used=memory_used,
+            memory_max=memory_max,
+            memory_free=memory_free,
+            memory_usage_percent=memory_usage_percent,
+            online_players=data.get("onlinePlayers", 0),
+            max_players=data.get("maxPlayers", 0),
+            uptime=data.get("uptime", 0),
+            uptime_formatted=data.get("uptimeFormatted", ""),
             worlds=data.get("worlds", []),
             plugins_total=plugins.get("total", 0),
             plugins_enabled=plugins.get("enabled", 0),

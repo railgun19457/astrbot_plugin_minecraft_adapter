@@ -138,7 +138,7 @@ class RestClient:
         resp = await self._get("/players", params={"page": page, "size": size})
         if resp.success and resp.data:
             players = [PlayerInfo.from_dict(p) for p in resp.data.get("players", [])]
-            total = resp.data.get("total", 0)
+            total = resp.data.get("total", resp.data.get("count", len(players)))
             return players, total, ""
         return [], 0, resp.message
 
@@ -151,7 +151,7 @@ class RestClient:
 
     async def get_player_by_name(self, name: str) -> tuple[PlayerDetail | None, str]:
         """通过名称获取玩家详细信息"""
-        resp = await self._get(f"/players/name/{name}")
+        resp = await self._get(f"/players/{name}")
         if resp.success and resp.data:
             return PlayerDetail.from_dict(resp.data), ""
         return None, resp.message

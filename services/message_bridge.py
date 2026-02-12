@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
 from astrbot.api.message_components import Plain
-from astrbot.core.platform.astr_message_event import MessageSesion
 
 from ..core.models import MCMessage, MessageType, ServerConfig
 
@@ -38,8 +37,8 @@ class MessageBridge:
         """注册用于消息转发的服务器"""
         self._server_configs[config.server_id] = config
 
-        # 为自动转发会话构建反向映射
-        for session in config.auto_forward_sessions:
+        # 为目标会话构建反向映射
+        for session in config.target_sessions:
             if session not in self._session_to_servers:
                 self._session_to_servers[session] = []
             self._session_to_servers[session].append((config.server_id, config))
@@ -49,7 +48,7 @@ class MessageBridge:
         config = self._server_configs.pop(server_id, None)
         if config:
             # 从反向映射中移除
-            for session in config.auto_forward_sessions:
+            for session in config.target_sessions:
                 if session in self._session_to_servers:
                     self._session_to_servers[session] = [
                         (sid, cfg)
@@ -77,7 +76,7 @@ class MessageBridge:
             return False
 
         # 获取目标会话
-        targets = config.forward_target_session
+        targets = config.target_sessions
         if not targets:
             return False
 
@@ -149,34 +148,13 @@ class MessageBridge:
             如果 UMO 格式无效或找不到平台，则记录警告。
         """
         try:
-            # 解析 UMO 格式: 平台:类型:ID
-            parts = umo.split(":")
-            if len(parts) < 3:
-                logger.warning(f"[MessageBridge] UMO 格式无效: {umo}")
-                return
-
-            platform_name = parts[0]
-            # msg_type = parts[1]  # GroupMessage 或 FriendMessage
-            # session_id = ":".join(parts[2:])  # 未使用，会话使用完整的 UMO
-
             # 创建消息链
             message_chain = MessageChain([Plain(text=content)])
 
-            # 创建消息会话
-            session = MessageSesion(
-                session_id=umo,
-            )
-
-            # 从上下文中获取平台管理器
-            pm = self.context.platform_mgr
-            if pm:
-                # 查找平台
-                for platform in pm.platforms:
-                    if platform.meta().name == platform_name:
-                        await platform.send_by_session(session, message_chain)
-                        return
-
-            logger.warning(f"[MessageBridge] 未找到平台: {platform_name}")
+            # 使用 Context 直接发送，内部会解析 UMO
+            sent = await self.context.send_message(umo, message_chain)
+            if not sent:
+                logger.warning(f"[MessageBridge] 未找到平台: {umo}")
 
         except Exception as e:
             logger.error(f"[MessageBridge] 发送消息失败: {e}")
@@ -192,21 +170,19 @@ class MessageBridge:
 
         # 检查每个服务器配置
         for server_id, config in self._server_configs.items():
-            # 检查是否启用了自动转发
-            if not config.auto_forward_prefix:
+            # 检查此会话是否在目标会话列表中
+            if not config.target_sessions or umo not in config.target_sessions:
                 continue
 
-            # 检查此会话是否在自动转发列表中
-            # 列表为空表示所有会话
-            if config.auto_forward_sessions and umo not in config.auto_forward_sessions:
-                continue
+            # 前缀为空时转发全部消息，否则检查前缀
+            if config.auto_forward_prefix:
+                if not message_str.startswith(config.auto_forward_prefix):
+                    continue
+                # 移除前缀
+                content = message_str[len(config.auto_forward_prefix) :].strip()
+            else:
+                content = message_str.strip()
 
-            # 检查前缀
-            if not message_str.startswith(config.auto_forward_prefix):
-                continue
-
-            # 移除前缀并转发
-            content = message_str[len(config.auto_forward_prefix) :].strip()
             if not content:
                 continue
 
@@ -303,12 +279,10 @@ class MessageBridge:
             logger.debug(f"[MessageBridge] 表情响应失败: {e}")
 
     def get_servers_for_session(self, umo: str) -> list[str]:
-        """获取希望接收来自该会话消息的服务器 ID"""
+        """获取目标会话包含该 UMO 的服务器 ID 列表"""
         result = []
         for server_id, config in self._server_configs.items():
-            if not config.auto_forward_prefix:
-                continue
-            if not config.auto_forward_sessions or umo in config.auto_forward_sessions:
+            if config.target_sessions and umo in config.target_sessions:
                 result.append(server_id)
         return result
 

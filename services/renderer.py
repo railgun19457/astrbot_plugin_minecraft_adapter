@@ -216,12 +216,15 @@ class InfoRenderer:
         self, info: "ServerInfo", status: "ServerStatus"
     ) -> str:
         """将服务器状态格式化为文本"""
+        online_count = info.online_count or status.online_players
+        max_players = info.max_players or status.max_players
+        uptime_formatted = info.uptime_formatted or status.uptime_formatted
         lines = [
             f"🖥️ 服务器状态 - {info.name}",
             "━━━━━━━━━━━━━━━━━━",
             f"平台: {info.platform} {info.minecraft_version}",
-            f"在线玩家: {info.online_count}/{info.max_players}",
-            f"运行时间: {info.uptime_formatted}",
+            f"在线玩家: {online_count}/{max_players}",
+            f"运行时间: {uptime_formatted}",
             "",
             "📊 性能指标",
             f"TPS: {status.tps_1m:.1f} / {status.tps_5m:.1f} / {status.tps_15m:.1f}",
@@ -262,7 +265,10 @@ class InfoRenderer:
                     "SPECTATOR": ("旁观", "👻"),
                 }
                 mode_name, mode_emoji = modes.get(p.game_mode, ("未知", "❓"))
-                lines.append(f"{mode_emoji} {p.name} | {p.world} | {p.ping}ms")
+                if not p.game_mode and (not p.world or p.world == "未知"):
+                    lines.append(f"👤 {p.name} | {p.ping}ms")
+                else:
+                    lines.append(f"{mode_emoji} {p.name} | {p.world} | {p.ping}ms")
 
         return "\n".join(lines)
 
@@ -292,7 +298,7 @@ class InfoRenderer:
             f"Y={player.location.get('y', 0):.1f}, "
             f"Z={player.location.get('z', 0):.1f}",
             "",
-            f"⏱️ 在线时长: {player.online_time_formatted}",
+            f"⏱️ 在线时长: {player.online_time_formatted or '未知'}",
         ]
 
         if player.is_op:
@@ -306,6 +312,9 @@ class InfoRenderer:
         self, info: "ServerInfo", status: "ServerStatus"
     ) -> str:
         """将服务器状态格式化为 HTML 以便进行图片渲染"""
+        online_count = info.online_count or status.online_players
+        max_players = info.max_players or status.max_players
+        uptime_formatted = info.uptime_formatted or status.uptime_formatted
         # 计算 TPS 颜色
         tps_color = (
             "#4caf50"
@@ -401,11 +410,11 @@ class InfoRenderer:
             <div class="card">
                 <div class="stat-row">
                     <span class="stat-label">在线玩家</span>
-                    <span class="stat-value">{info.online_count}/{info.max_players}</span>
+                    <span class="stat-value">{online_count}/{max_players}</span>
                 </div>
                 <div class="stat-row">
                     <span class="stat-label">运行时间</span>
-                    <span class="stat-value">{escape(info.uptime_formatted)}</span>
+                    <span class="stat-value">{escape(uptime_formatted)}</span>
                 </div>
                 <div class="stat-row">
                     <span class="stat-label">TPS (1m/5m/15m)</span>
@@ -440,13 +449,22 @@ class InfoRenderer:
             }
             mode_name, mode_emoji = modes.get(p.game_mode, ("未知", "❓"))
 
-            players_html += f"""
-            <div class="player-item">
-                <span class="player-icon">{mode_emoji}</span>
-                <span class="player-name">{escape(p.name)}</span>
-                <span class="player-info">{escape(p.world)} | {p.ping}ms</span>
-            </div>
-            """
+            if not p.game_mode and (not p.world or p.world == "未知"):
+                players_html += f"""
+                <div class="player-item">
+                    <span class="player-icon">👤</span>
+                    <span class="player-name">{escape(p.name)}</span>
+                    <span class="player-info">{p.ping}ms</span>
+                </div>
+                """
+            else:
+                players_html += f"""
+                <div class="player-item">
+                    <span class="player-icon">{mode_emoji}</span>
+                    <span class="player-name">{escape(p.name)}</span>
+                    <span class="player-info">{escape(p.world)} | {p.ping}ms</span>
+                </div>
+                """
 
         if not players_html:
             players_html = '<div class="no-players">当前没有玩家在线</div>'
@@ -642,7 +660,7 @@ class InfoRenderer:
                 </div>
                 <div class="stat-row">
                     <span class="stat-label">⏱️ 在线时长</span>
-                    <span>{escape(player.online_time_formatted)}</span>
+                    <span>{escape(player.online_time_formatted or "未知")}</span>
                 </div>
             </div>
         </body>

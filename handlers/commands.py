@@ -33,13 +33,13 @@ class CustomCommandParser:
 
         格式: "trigger <&param&><<>>actual_command {param} {sender}"
         """
-        self.mappings: list[tuple[str, list[str], str]] = []
+        self.mappings: list[dict[str, object]] = []
         for mapping in mappings:
             parsed = self._parse_mapping(mapping)
             if parsed:
                 self.mappings.append(parsed)
 
-    def _parse_mapping(self, mapping: str) -> tuple[str, list[str], str] | None:
+    def _parse_mapping(self, mapping: str) -> dict[str, object] | None:
         """解析映射字符串
 
         返回:
@@ -62,7 +62,14 @@ class CustomCommandParser:
         for param in param_names:
             trigger_regex = trigger_regex.replace(f"<&{param}&>", f"(?P<{param}>\\S+)")
 
-        return (trigger_regex, param_names, command_part)
+        trigger_name = trigger_part.split()[0] if trigger_part else ""
+        return {
+            "trigger_part": trigger_part,
+            "trigger_name": trigger_name,
+            "trigger_regex": trigger_regex,
+            "param_names": param_names,
+            "command_template": command_part,
+        }
 
     def match(
         self, text: str, sender_mc_name: str | None = None
@@ -72,7 +79,9 @@ class CustomCommandParser:
         返回:
             tuple: (actual_command, matched_params) 或 None
         """
-        for trigger_regex, param_names, command_template in self.mappings:
+        for mapping in self.mappings:
+            trigger_regex = mapping["trigger_regex"]
+            command_template = mapping["command_template"]
             match = re.match(f"^{trigger_regex}$", text, re.IGNORECASE)
             if match:
                 params = match.groupdict()
@@ -83,8 +92,27 @@ class CustomCommandParser:
                 command = command_template
                 for key, value in params.items():
                     command = command.replace(f"{{{key}}}", value)
+                    command = command.replace(f"<&{key}&>", value)
 
                 return command, params
+
+        return None
+
+    def get_missing_usage(self, text: str) -> str | None:
+        """If text looks like a custom command but misses params, return usage."""
+        tokens = re.split(r"\s+", text.strip())
+        if not tokens or not tokens[0]:
+            return None
+
+        first_token = tokens[0].lower()
+        for mapping in self.mappings:
+            trigger_name = str(mapping["trigger_name"]).lower()
+            if not trigger_name or first_token != trigger_name:
+                continue
+            param_names = mapping["param_names"]
+            expected_count = 1 + len(param_names)
+            if len(tokens) < expected_count:
+                return str(mapping["trigger_part"])
 
         return None
 
@@ -112,6 +140,66 @@ class CommandHandler:
             f"[CommandHandler] 已为服务器 {server_id} 注册了 {len(mappings)} 个自定义命令"
         )
 
+    async def handle_custom_command(self, event: AstrMessageEvent) -> bool:
+        """Try to match and execute a custom command from the message text.
+
+        Returns True if a custom command was matched and executed.
+        """
+        message_str = event.message_str.strip()
+        if not message_str:
+            return False
+
+        umo = event.unified_msg_origin
+
+        # Find servers whose target_sessions include this session
+        for server_id, parser in self._custom_parsers.items():
+            config = self.get_server_config(server_id)
+            if not config:
+                continue
+            # Only match in sessions associated with this server
+            if not config.target_sessions or umo not in config.target_sessions:
+                continue
+            if not config.cmd_enabled:
+                continue
+
+            # Get sender's bound MC name
+            sender_mc_name = None
+            if config.bind_enable:
+                platform = event.get_platform_name()
+                user_id = event.get_sender_id()
+                binding = self.binding_service.get_binding(platform, user_id)
+                sender_mc_name = binding.mc_player_name if binding else None
+
+            missing_usage = parser.get_missing_usage(message_str)
+            if missing_usage:
+                await event.send(
+                    MessageChain([Plain(text=f"❌ 参数不足，格式: {missing_usage}")])
+                )
+                return True
+
+            result = parser.match(message_str, sender_mc_name)
+            if result:
+                command, _ = result
+                server = self.server_manager.get_server(server_id)
+                if not server or not server.connected:
+                    await event.send(
+                        MessageChain([Plain(text=f"❌ 服务器 {server_id} 未连接")])
+                    )
+                    return True
+
+                success, output, _ = await server.rest_client.execute_command(command)
+                if success:
+                    await event.send(
+                        MessageChain([Plain(text=f"✅ 指令执行成功\n{output}")])
+                    )
+                else:
+                    await event.send(
+                        MessageChain([Plain(text=f"❌ 指令执行失败: {output}")])
+                    )
+                return True
+
+        return False
+
     async def handle_help(self, event: AstrMessageEvent, server_id: str = ""):
         """显示帮助信息"""
         help_text = """📖 Minecraft 适配器指令帮助
@@ -128,19 +216,24 @@ class CommandHandler:
 
 绑定功能:
   /mc bind <游戏ID> - 绑定你的游戏ID
-  /mc unbind - 解除绑定
+  /mc unbind - 解除绑定"""
 
-说明:
-  - [服务器ID] 为可选参数，不填则使用默认服务器
-  - 使用 * 前缀可将消息转发到MC服务器（如配置）"""
+        # 收集自定义指令列表
+        custom_cmds = self._get_custom_command_triggers()
+        if custom_cmds:
+            help_text += "\n\n自定义指令:\n"
+            for trigger in custom_cmds:
+                help_text += f"  {trigger}\n"
+            help_text = help_text.rstrip("\n")
 
         yield event.plain_result(help_text)
 
     async def handle_status(self, event: AstrMessageEvent, server_id: str = ""):
         """显示服务器状态"""
-        server = self._get_server(server_id)
+        umo = event.unified_msg_origin
+        server = self._get_server(server_id, umo=umo)
         if not server:
-            yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
+            yield event.plain_result(self._no_server_msg(server_id, umo))
             return
 
         # 通过 REST API 获取服务器信息
@@ -169,15 +262,19 @@ class CommandHandler:
 
     async def handle_list(self, event: AstrMessageEvent, server_id: str = ""):
         """显示在线玩家列表"""
-        server = self._get_server(server_id)
+        umo = event.unified_msg_origin
+        server = self._get_server(server_id, umo=umo)
         if not server:
-            yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
+            yield event.plain_result(self._no_server_msg(server_id, umo))
             return
 
         players, total, err = await server.rest_client.get_players()
         if err:
             yield event.plain_result(f"❌ 获取玩家列表失败: {err}")
             return
+
+        if total == 0 and players:
+            total = len(players)
 
         # 获取服务器名称
         server_name = ""
@@ -205,12 +302,11 @@ class CommandHandler:
             yield event.plain_result("❌ 请指定玩家ID")
             return
 
-        server = self._get_server(server_id)
+        umo = event.unified_msg_origin
+        server = self._get_server(server_id, umo=umo)
         if not server:
-            yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
+            yield event.plain_result(self._no_server_msg(server_id, umo))
             return
-
-        # 首先通过名称尝试
         player, err = await server.rest_client.get_player_by_name(player_id)
         if not player:
             yield event.plain_result(f"❌ 获取玩家信息失败: {err}")
@@ -235,9 +331,10 @@ class CommandHandler:
             yield event.plain_result("❌ 请指定要执行的指令")
             return
 
-        server = self._get_server(server_id)
+        umo = event.unified_msg_origin
+        server = self._get_server(server_id, umo=umo)
         if not server:
-            yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
+            yield event.plain_result(self._no_server_msg(server_id, umo))
             return
 
         config = self.get_server_config(server.server_id)
@@ -249,20 +346,6 @@ class CommandHandler:
         if not self._check_command_allowed(command, config):
             yield event.plain_result("❌ 此指令不在允许列表中")
             return
-
-        # 检查自定义命令映射
-        sender_mc_name = None
-        if config.bind_enable:
-            platform = event.get_platform_name()
-            user_id = event.get_sender_id()
-            binding = self.binding_service.get_binding(platform, user_id)
-            sender_mc_name = binding.mc_player_name if binding else None
-
-        parser = self._custom_parsers.get(server.server_id)
-        if parser:
-            result = parser.match(command, sender_mc_name)
-            if result:
-                command, _ = result
 
         # 执行命令
         success, output, _ = await server.rest_client.execute_command(command)
@@ -279,9 +362,11 @@ class CommandHandler:
         server_id: str = "",
     ):
         """查询服务器日志"""
-        server = self._get_server(server_id)
+        server = self._get_server(server_id, umo=event.unified_msg_origin)
         if not server:
-            yield event.plain_result(f"❌ 服务器 {server_id or '默认'} 未找到或未连接")
+            yield event.plain_result(
+                self._no_server_msg(server_id, event.unified_msg_origin)
+            )
             return
 
         lines = min(max(MIN_LOG_LINES, lines), MAX_LOG_LINES)  # 限制到 1-1000
@@ -373,13 +458,48 @@ class CommandHandler:
         else:
             yield event.plain_result(f"❌ {message}")
 
-    def _get_server(self, server_id: str = ""):
-        """通过 ID 获取服务器连接，或如果未指定则获取第一个已连接的服务器"""
+    def _get_custom_command_triggers(self) -> list[str]:
+        """获取所有服务器的自定义命令触发词列表（去重）"""
+        triggers = []
+        seen = set()
+        for server_id, parser in self._custom_parsers.items():
+            config = self.get_server_config(server_id)
+            if config and config.custom_cmd_list:
+                for mapping_str in config.custom_cmd_list:
+                    if CustomCommandParser.SEPARATOR in mapping_str:
+                        trigger_part = mapping_str.split(
+                            CustomCommandParser.SEPARATOR, 1
+                        )[0].strip()
+                        if trigger_part not in seen:
+                            seen.add(trigger_part)
+                            triggers.append(trigger_part)
+        return triggers
+
+    def _no_server_msg(self, server_id: str, umo: str = "") -> str:
+        """Generate error message when no server is found"""
+        if server_id:
+            return f"❌ 服务器 {server_id} 未找到或未连接"
+        if umo:
+            return "❌ 当前会话未关联任何服务器，请在插件配置中将此会话添加到服务器的目标会话列表"
+        return "❌ 没有可用的服务器连接"
+
+    def _get_server(self, server_id: str = "", umo: str = ""):
+        """通过 ID 获取服务器连接
+
+        优先级: 指定 server_id > 根据 UMO 匹配 target_sessions > 第一个已连接的服务器
+        """
         if server_id:
             server = self.server_manager.get_server(server_id)
             if server and server.connected:
                 return server
             return None
+
+        # 根据当前会话 UMO 查找服务器
+        if umo:
+            for s in self.server_manager.get_connected_servers():
+                config = self.get_server_config(s.server_id)
+                if config and config.target_sessions and umo in config.target_sessions:
+                    return s
 
         # 返回第一个已连接的服务器
         connected = self.server_manager.get_connected_servers()

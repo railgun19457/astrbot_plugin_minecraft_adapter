@@ -81,23 +81,17 @@
                 "hint": "将玩家加入/离开服务器的消息转发到指定会话",
                 "default": false
               },
-              "forward_target_session": {
+              "target_sessions": {
                 "type": "list",
-                "description": "消息转发目标会话",
-                "hint": "MC服务器消息转发到的目标会话UMO列表。格式如 aiocqhttp:GroupMessage:123456789。留空则不转发",
+                "description": "目标会话",
+                "hint": "MC服务器消息互通的目标会话UMO列表。格式如 aiocqhttp:GroupMessage:123456789。用于MC消息转发到外部、外部消息转发到MC以及区分指令所属服务器",
                 "default": []
               },
               "auto_forward_prefix": {
                 "type": "string",
                 "description": "自动转发消息前缀",
-                "hint": "外部会话中以此前缀开头的消息将被转发到MC服务器（例如: *）。留空则禁用此功能",
+                "hint": "外部会话中以此前缀开头的消息将被转发到MC服务器（例如: *）。留空则转发全部消息",
                 "default": "*"
-              },
-              "auto_forward_sessions": {
-                "type": "list",
-                "description": "自动转发监听的会话",
-                "hint": "监听这些会话的消息进行转发。格式如 aiocqhttp:GroupMessage:123456789。留空则监听所有会话",
-                "default": []
               },
               "mark_option": {
                 "type": "string",

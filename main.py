@@ -10,6 +10,7 @@ from pathlib import Path
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
+from astrbot.core.star.filter.command import GreedyStr
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from .core.models import MCMessage, MessageType, ServerConfig, ServerInfo
@@ -257,14 +258,10 @@ class MinecraftAdapterPlugin(Star):
                 yield result
 
     @mc_group.command("cmd")
-    async def cmd_execute(
-        self, event: AstrMessageEvent, command: str, server_id: str = ""
-    ):
+    async def cmd_execute(self, event: AstrMessageEvent, command: GreedyStr = ""):
         """远程执行服务器指令"""
         if self.command_handler:
-            async for result in self.command_handler.handle_cmd(
-                event, command, server_id
-            ):
+            async for result in self.command_handler.handle_cmd(event, str(command)):
                 yield result
 
     @mc_group.command("log")
@@ -300,12 +297,18 @@ class MinecraftAdapterPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
-        """监听需要转发到 MC 服务器的消息"""
+        """监听需要转发到 MC 服务器的消息，并处理自定义指令"""
+        # 先检查自定义指令
+        if self.command_handler:
+            handled = await self.command_handler.handle_custom_command(event)
+            if handled:
+                event.stop_event()
+                return
+
         # 检查此消息是否应该被转发
         forwarded = await self.message_bridge.handle_external_message(event)
         if forwarded:
-            # 如果消息已转发，停止事件传播
-            # 返回空表示消息已处理
+            event.stop_event()
             return
 
     async def terminate(self):

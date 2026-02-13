@@ -399,6 +399,10 @@ class LogEntry:
 
     @classmethod
     def from_dict(cls, data: dict) -> "LogEntry":
+        if isinstance(data, str):
+            return cls(message=data)
+        if not isinstance(data, dict):
+            return cls(message=str(data))
         return cls(
             timestamp=data.get("timestamp", 0),
             level=data.get("level", ""),

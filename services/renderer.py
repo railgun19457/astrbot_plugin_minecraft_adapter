@@ -83,8 +83,10 @@ class InfoRenderer:
             try:
                 await self._ensure_renderer()
                 html = self.render_server_status_html(server_info, server_status)
-                image_path = await self._html_renderer.render_t2i(
-                    html, use_network=False
+                image_path = await self._html_renderer.render_custom_template(
+                    tmpl_str=html,
+                    tmpl_data={},
+                    return_url=False,
                 )
                 # 读取图片文件并作为 BytesIO 返回
                 with open(image_path, "rb") as f:
@@ -118,8 +120,10 @@ class InfoRenderer:
             try:
                 await self._ensure_renderer()
                 html = self.render_player_list_html(players, total, server_name)
-                image_path = await self._html_renderer.render_t2i(
-                    html, use_network=False
+                image_path = await self._html_renderer.render_custom_template(
+                    tmpl_str=html,
+                    tmpl_data={},
+                    return_url=False,
                 )
                 # 读取图片文件并作为 BytesIO 返回
                 with open(image_path, "rb") as f:
@@ -149,8 +153,10 @@ class InfoRenderer:
             try:
                 await self._ensure_renderer()
                 html = self.render_player_detail_html(player)
-                image_path = await self._html_renderer.render_t2i(
-                    html, use_network=False
+                image_path = await self._html_renderer.render_custom_template(
+                    tmpl_str=html,
+                    tmpl_data={},
+                    return_url=False,
                 )
                 # 读取图片文件并作为 BytesIO 返回
                 with open(image_path, "rb") as f:

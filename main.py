@@ -233,27 +233,27 @@ class MinecraftAdapterPlugin(Star):
                 yield result
 
     @mc_group.command("status")
-    async def cmd_status(self, event: AstrMessageEvent, server_id: str = ""):
+    async def cmd_status(self, event: AstrMessageEvent, server_no: int = 0):
         """查看服务器状态"""
         if self.command_handler:
-            async for result in self.command_handler.handle_status(event, server_id):
+            async for result in self.command_handler.handle_status(event, server_no):
                 yield result
 
     @mc_group.command("list")
-    async def cmd_list(self, event: AstrMessageEvent, server_id: str = ""):
+    async def cmd_list(self, event: AstrMessageEvent, server_no: int = 0):
         """查看在线玩家列表"""
         if self.command_handler:
-            async for result in self.command_handler.handle_list(event, server_id):
+            async for result in self.command_handler.handle_list(event, server_no):
                 yield result
 
     @mc_group.command("player")
     async def cmd_player(
-        self, event: AstrMessageEvent, player_id: str, server_id: str = ""
+        self, event: AstrMessageEvent, player_id: str, server_no: int = 0
     ):
         """查看玩家详细信息"""
         if self.command_handler:
             async for result in self.command_handler.handle_player(
-                event, player_id, server_id
+                event, player_id, server_no
             ):
                 yield result
 
@@ -264,25 +264,14 @@ class MinecraftAdapterPlugin(Star):
             async for result in self.command_handler.handle_cmd(event, str(command)):
                 yield result
 
-    @mc_group.command("log")
-    async def cmd_log(
-        self, event: AstrMessageEvent, lines: int = 100, server_id: str = ""
-    ):
-        """查询服务器日志"""
-        if self.command_handler:
-            async for result in self.command_handler.handle_log(
-                event, lines, server_id
-            ):
-                yield result
-
     @mc_group.command("bind")
     async def cmd_bind(
-        self, event: AstrMessageEvent, player_id: str, server_id: str = ""
+        self, event: AstrMessageEvent, player_id: str, server_no: int = 0
     ):
         """绑定游戏ID"""
         if self.command_handler:
             async for result in self.command_handler.handle_bind(
-                event, player_id, server_id
+                event, player_id, server_no
             ):
                 yield result
 
@@ -298,6 +287,103 @@ class MinecraftAdapterPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
         """监听需要转发到 MC 服务器的消息，并处理自定义指令"""
+        # 允许在未唤醒状态下直接使用 `mc ...` 指令
+        if self.command_handler and not event.is_at_or_wake_command:
+            text = event.get_message_str().strip()
+            if text:
+                parts = text.split()
+                if parts and parts[0].lower() == "mc":
+                    subcommand = parts[1].lower() if len(parts) > 1 else "help"
+                    args = parts[2:]
+
+                    if subcommand == "help":
+                        async for result in self.command_handler.handle_help(event):
+                            yield result
+                        event.stop_event()
+                        return
+
+                    if subcommand == "status":
+                        if args and not args[0].isdigit():
+                            yield event.plain_result("❌ 服务器编号应为数字")
+                            event.stop_event()
+                            return
+                        server_no = int(args[0]) if args else 0
+                        async for result in self.command_handler.handle_status(
+                            event, server_no
+                        ):
+                            yield result
+                        event.stop_event()
+                        return
+
+                    if subcommand == "list":
+                        if args and not args[0].isdigit():
+                            yield event.plain_result("❌ 服务器编号应为数字")
+                            event.stop_event()
+                            return
+                        server_no = int(args[0]) if args else 0
+                        async for result in self.command_handler.handle_list(
+                            event, server_no
+                        ):
+                            yield result
+                        event.stop_event()
+                        return
+
+                    if subcommand == "player":
+                        if not args:
+                            yield event.plain_result("❌ 请指定玩家ID")
+                            event.stop_event()
+                            return
+                        player_id = args[0]
+                        if len(args) > 1 and not args[1].isdigit():
+                            yield event.plain_result("❌ 服务器编号应为数字")
+                            event.stop_event()
+                            return
+                        server_no = int(args[1]) if len(args) > 1 else 0
+                        async for result in self.command_handler.handle_player(
+                            event, player_id, server_no
+                        ):
+                            yield result
+                        event.stop_event()
+                        return
+
+                    if subcommand == "cmd":
+                        command = " ".join(args)
+                        async for result in self.command_handler.handle_cmd(
+                            event, command
+                        ):
+                            yield result
+                        event.stop_event()
+                        return
+
+                    if subcommand == "bind":
+                        if not args:
+                            yield event.plain_result("❌ 请指定要绑定的游戏ID")
+                            event.stop_event()
+                            return
+                        player_id = args[0]
+                        if len(args) > 1 and not args[1].isdigit():
+                            yield event.plain_result("❌ 服务器编号应为数字")
+                            event.stop_event()
+                            return
+                        server_no = int(args[1]) if len(args) > 1 else 0
+                        async for result in self.command_handler.handle_bind(
+                            event, player_id, server_no
+                        ):
+                            yield result
+                        event.stop_event()
+                        return
+
+                    if subcommand == "unbind":
+                        async for result in self.command_handler.handle_unbind(event):
+                            yield result
+                        event.stop_event()
+                        return
+
+                    async for result in self.command_handler.handle_help(event):
+                        yield result
+                    event.stop_event()
+                    return
+
         # 先检查自定义指令
         if self.command_handler:
             handled = await self.command_handler.handle_custom_command(event)

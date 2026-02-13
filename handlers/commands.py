@@ -1,25 +1,16 @@
 """Minecraft 适配器插件的命令处理器"""
 
 import re
-import tempfile
-from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
-from astrbot.api.message_components import File, Image, Plain
+from astrbot.api.message_components import Image, Plain
 
 if TYPE_CHECKING:
     from ..core.server_manager import ServerManager
     from ..services.binding import BindingService
     from ..services.renderer import InfoRenderer
-
-
-# 命令处理器常量
-DEFAULT_LOG_LINES = 100
-MAX_LOG_LINES = 1000
-MIN_LOG_LINES = 1
 
 
 class CustomCommandParser:
@@ -200,23 +191,22 @@ class CommandHandler:
 
         return False
 
-    async def handle_help(self, event: AstrMessageEvent, server_id: str = ""):
+    async def handle_help(self, event: AstrMessageEvent):
         """显示帮助信息"""
         help_text = """📖 Minecraft 适配器指令帮助
 
 基础指令:
-  /mc help - 显示此帮助信息
-  /mc status [服务器ID] - 查看服务器状态
-  /mc list [服务器ID] - 查看在线玩家列表
-  /mc player <玩家ID> [服务器ID] - 查看玩家详细信息
+    /mc help - 显示此帮助信息
+    /mc status [编号] - 查看服务器状态
+    /mc list [编号] - 查看在线玩家列表
+    /mc player <玩家ID> [编号] - 查看玩家详细信息
 
 远程指令:
-  /mc cmd <指令> [服务器ID] - 远程执行服务器指令
-  /mc log <行数> [服务器ID] - 查询服务器日志
+    /mc cmd [编号] <指令> - 远程执行服务器指令
 
 绑定功能:
-  /mc bind <游戏ID> - 绑定你的游戏ID
-  /mc unbind - 解除绑定"""
+    /mc bind <游戏ID> [编号] - 绑定你的游戏ID
+    /mc unbind - 解除绑定"""
 
         # 收集自定义指令列表
         custom_cmds = self._get_custom_command_triggers()
@@ -228,12 +218,13 @@ class CommandHandler:
 
         yield event.plain_result(help_text)
 
-    async def handle_status(self, event: AstrMessageEvent, server_id: str = ""):
+    async def handle_status(self, event: AstrMessageEvent, server_no: int = 0):
         """显示服务器状态"""
-        umo = event.unified_msg_origin
-        server = self._get_server(server_id, umo=umo)
+        server, error_msg = self._resolve_server(
+            event.unified_msg_origin, server_no, command_hint="/mc status <编号>"
+        )
         if not server:
-            yield event.plain_result(self._no_server_msg(server_id, umo))
+            yield event.plain_result(error_msg)
             return
 
         # 通过 REST API 获取服务器信息
@@ -256,16 +247,17 @@ class CommandHandler:
         )
 
         if result.is_image:
-            yield MessageChain([Image.fromBytes(result.image.getvalue())])
+            yield event.chain_result([Image.fromBytes(result.image.getvalue())])
         else:
             yield event.plain_result(result.text)
 
-    async def handle_list(self, event: AstrMessageEvent, server_id: str = ""):
+    async def handle_list(self, event: AstrMessageEvent, server_no: int = 0):
         """显示在线玩家列表"""
-        umo = event.unified_msg_origin
-        server = self._get_server(server_id, umo=umo)
+        server, error_msg = self._resolve_server(
+            event.unified_msg_origin, server_no, command_hint="/mc list <编号>"
+        )
         if not server:
-            yield event.plain_result(self._no_server_msg(server_id, umo))
+            yield event.plain_result(error_msg)
             return
 
         players, total, err = await server.rest_client.get_players()
@@ -290,22 +282,25 @@ class CommandHandler:
         )
 
         if result.is_image:
-            yield MessageChain([Image.fromBytes(result.image.getvalue())])
+            yield event.chain_result([Image.fromBytes(result.image.getvalue())])
         else:
             yield event.plain_result(result.text)
 
     async def handle_player(
-        self, event: AstrMessageEvent, player_id: str, server_id: str = ""
+        self, event: AstrMessageEvent, player_id: str, server_no: int = 0
     ):
         """显示玩家详细信息"""
         if not player_id:
             yield event.plain_result("❌ 请指定玩家ID")
             return
 
-        umo = event.unified_msg_origin
-        server = self._get_server(server_id, umo=umo)
+        server, error_msg = self._resolve_server(
+            event.unified_msg_origin,
+            server_no,
+            command_hint="/mc player <玩家ID> <编号>",
+        )
         if not server:
-            yield event.plain_result(self._no_server_msg(server_id, umo))
+            yield event.plain_result(error_msg)
             return
         player, err = await server.rest_client.get_player_by_name(player_id)
         if not player:
@@ -319,22 +314,26 @@ class CommandHandler:
         result = await self.renderer.render_player_detail(player, as_image=use_image)
 
         if result.is_image:
-            yield MessageChain([Image.fromBytes(result.image.getvalue())])
+            yield event.chain_result([Image.fromBytes(result.image.getvalue())])
         else:
             yield event.plain_result(result.text)
 
     async def handle_cmd(
-        self, event: AstrMessageEvent, command: str, server_id: str = ""
+        self, event: AstrMessageEvent, command: str, server_no: int = 0
     ):
         """执行远程命令"""
+        server_no, command = self._extract_server_no(command, server_no)
         if not command:
             yield event.plain_result("❌ 请指定要执行的指令")
             return
 
-        umo = event.unified_msg_origin
-        server = self._get_server(server_id, umo=umo)
+        server, error_msg = self._resolve_server(
+            event.unified_msg_origin,
+            server_no,
+            command_hint="/mc cmd <编号> <指令>",
+        )
         if not server:
-            yield event.plain_result(self._no_server_msg(server_id, umo))
+            yield event.plain_result(error_msg)
             return
 
         config = self.get_server_config(server.server_id)
@@ -355,75 +354,24 @@ class CommandHandler:
         else:
             yield event.plain_result(f"❌ 指令执行失败: {output}")
 
-    async def handle_log(
-        self,
-        event: AstrMessageEvent,
-        lines: int = DEFAULT_LOG_LINES,
-        server_id: str = "",
-    ):
-        """查询服务器日志"""
-        server = self._get_server(server_id, umo=event.unified_msg_origin)
-        if not server:
-            yield event.plain_result(
-                self._no_server_msg(server_id, event.unified_msg_origin)
-            )
-            return
-
-        lines = min(max(MIN_LOG_LINES, lines), MAX_LOG_LINES)  # 限制到 1-1000
-
-        logs, err = await server.rest_client.get_logs(lines=lines)
-        if err:
-            yield event.plain_result(f"❌ 获取日志失败: {err}")
-            return
-
-        if not logs:
-            yield event.plain_result("📋 没有日志记录")
-            return
-
-        # 将日志格式化为文本文件
-        log_content = []
-        for log in logs:
-            timestamp = datetime.fromtimestamp(log.timestamp / 1000).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-            log_content.append(f"[{timestamp}] [{log.level}] {log.message}")
-
-        log_text = "\n".join(log_content)
-
-        # 使用 NamedTemporaryFile，设置 delete=False 以便发送后手动清理
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            suffix=".log",
-            prefix=f"mc_server_log_{server.server_id}_",
-            delete=False,
-        ) as temp_file:
-            temp_file.write(log_text)
-            temp_path = Path(temp_file.name)
-
-        try:
-            yield MessageChain(
-                [
-                    File(file=f"file://{temp_path}", name=f"server_log_{lines}.log"),
-                    Plain(text=f"📋 最近 {len(logs)} 条日志"),
-                ]
-            )
-        finally:
-            # 发送后清理临时文件
-            try:
-                temp_path.unlink(missing_ok=True)
-            except OSError as e:
-                logger.warning(f"[CommandHandler] 无法清理临时文件: {e}")
-
     async def handle_bind(
-        self, event: AstrMessageEvent, player_id: str, server_id: str = ""
+        self, event: AstrMessageEvent, player_id: str, server_no: int = 0
     ):
         """绑定用户到 MC 玩家"""
         if not player_id:
             yield event.plain_result("❌ 请指定要绑定的游戏ID")
             return
 
-        config = self.get_server_config(server_id) if server_id else None
+        server, error_msg = self._resolve_server(
+            event.unified_msg_origin,
+            server_no,
+            command_hint="/mc bind <游戏ID> <编号>",
+        )
+        if not server:
+            yield event.plain_result(error_msg)
+            return
+
+        config = self.get_server_config(server.server_id)
         if config and not config.bind_enable:
             yield event.plain_result("❌ 绑定功能未启用")
             return
@@ -435,7 +383,7 @@ class CommandHandler:
             platform=platform,
             user_id=user_id,
             mc_player_name=player_id,
-            server_id=server_id,
+            server_id=server.server_id,
         )
 
         if success:
@@ -475,35 +423,63 @@ class CommandHandler:
                             triggers.append(trigger_part)
         return triggers
 
-    def _no_server_msg(self, server_id: str, umo: str = "") -> str:
-        """Generate error message when no server is found"""
-        if server_id:
-            return f"❌ 服务器 {server_id} 未找到或未连接"
-        if umo:
-            return "❌ 当前会话未关联任何服务器，请在插件配置中将此会话添加到服务器的目标会话列表"
-        return "❌ 没有可用的服务器连接"
+    def _get_session_servers(self, umo: str) -> list:
+        if not umo:
+            return []
+        servers = []
+        for server in self.server_manager.get_connected_servers():
+            config = self.get_server_config(server.server_id)
+            if config and config.target_sessions and umo in config.target_sessions:
+                servers.append(server)
+        return servers
 
-    def _get_server(self, server_id: str = "", umo: str = ""):
-        """通过 ID 获取服务器连接
+    def _format_server_choices(self, servers: list) -> str:
+        lines = []
+        for idx, server in enumerate(servers, start=1):
+            name = server.server_info.name if server.server_info else ""
+            name_part = f" ({name})" if name else ""
+            lines.append(f"{idx}. {server.server_id}{name_part}")
+        return "\n".join(lines)
 
-        优先级: 指定 server_id > 根据 UMO 匹配 target_sessions > 第一个已连接的服务器
-        """
-        if server_id:
-            server = self.server_manager.get_server(server_id)
-            if server and server.connected:
-                return server
-            return None
+    def _resolve_server(
+        self, umo: str, server_no: int, command_hint: str
+    ) -> tuple[object | None, str]:
+        servers = self._get_session_servers(umo)
+        if not servers:
+            return (
+                None,
+                "❌ 当前会话未关联任何服务器，请在插件配置中将此会话添加到服务器的目标会话列表",
+            )
 
-        # 根据当前会话 UMO 查找服务器
-        if umo:
-            for s in self.server_manager.get_connected_servers():
-                config = self.get_server_config(s.server_id)
-                if config and config.target_sessions and umo in config.target_sessions:
-                    return s
+        if server_no <= 0:
+            if len(servers) == 1:
+                return servers[0], ""
+            choices = self._format_server_choices(servers)
+            return (
+                None,
+                "⚠️ 当前会话关联多个服务器，请使用编号指定:\n"
+                f"{choices}\n"
+                f"示例: {command_hint}",
+            )
 
-        # 返回第一个已连接的服务器
-        connected = self.server_manager.get_connected_servers()
-        return connected[0] if connected else None
+        if server_no > len(servers):
+            choices = self._format_server_choices(servers)
+            return (
+                None,
+                "❌ 服务器编号无效，请使用以下编号:\n"
+                f"{choices}\n"
+                f"示例: {command_hint}",
+            )
+
+        return servers[server_no - 1], ""
+
+    def _extract_server_no(self, command: str, server_no: int) -> tuple[int, str]:
+        if server_no > 0:
+            return server_no, command
+        tokens = command.split()
+        if tokens and tokens[0].isdigit():
+            return int(tokens[0]), " ".join(tokens[1:]).strip()
+        return 0, command
 
     def _check_command_allowed(self, command: str, config) -> bool:
         """检查命令是否在白名单/黑名单中允许"""

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background-color: #f5f5f5;
+            color: #1f2937;
+            margin: 0;
+            padding: 0;
+            width: 1280px;
+            min-height: 720px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            zoom: 2.0;
+            background: #ffffff;
+            width: 580px;
+            display: flex;
+            flex-direction: column;
+            gap: 0; /* Merged cards, so no gap needed between header and main content */
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+            border: none;
+        }
+        .header-section {
+            background: linear-gradient(to right, #eff6ff, #ffffff);
+            padding: 20px 24px;
+            border-bottom: 1px solid #f3f4f6;
+            border-left: 6px solid #3b82f6;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: 800;
+            margin: 0;
+            color: #111827;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .subtitle {
+            margin-top: 6px;
+            color: #6b7280;
+            font-size: 13px;
+            font-family: 'Consolas', monospace;
+            display: inline-block;
+            background: #f3f4f6;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .content-section {
+            padding: 24px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .stat-label {
+            font-size: 13px;
+            color: #6b7280;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #111827;
+        }
+        .tps-good { color: #059669; }
+        .tps-warn { color: #d97706; }
+        .tps-bad { color: #dc2626; }
+        
+        .progress-bg {
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        .world-section {
+            padding: 0 24px 24px 24px;
+            border-top: 1px solid #f3f4f6;
+            padding-top: 16px;
+        }
+        .world-list {
+            margin-top: 12px;
+            display: grid;
+            gap: 8px;
+        }
+        .world-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 1px solid #f3f4f6;
+        }
+        .world-name {
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+        }
+        .world-metrics {
+            font-size: 12px;
+            color: #6b7280;
+            display: flex;
+            gap: 12px;
+        }
+        .metric {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-section">
+            <div class="title">
+                    <span>🖥️</span> {{ info.name }}
+                </div>
+                <div class="subtitle">
+                    {{ info.platform }} • {{ info.minecraft_version }}
+                </div>
+            </div>
+
+            <div class="content-section">
+                <div class="grid">
+                    <div class="stat-item">
+                        <span class="stat-label">在线玩家</span>
+                        <span class="stat-value">{{ online_count }} <span style="font-size:15px;color:#9ca3af;font-weight:500">/ {{ max_players }}</span></span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">运行时间</span>
+                        <span class="stat-value">{{ uptime }}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">TPS (1m/5m/15m)</span>
+                        <span class="stat-value">
+                            <span class="{{ tps_class(status.tps_1m) }}">{{ "%.1f"|format(status.tps_1m) }}</span>
+                            <span style="color:#e5e7eb;font-weight:300">|</span>
+                            <span class="{{ tps_class(status.tps_5m) }}">{{ "%.1f"|format(status.tps_5m) }}</span>
+                            <span style="color:#e5e7eb;font-weight:300">|</span>
+                            <span class="{{ tps_class(status.tps_15m) }}">{{ "%.1f"|format(status.tps_15m) }}</span>
+                        </span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">内存使用</span>
+                        <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                            <span class="stat-value {{ memory_class(status.memory_usage_percent) }}">
+                                {{ status.memory_used }} MB
+                            </span>
+                            <span style="font-size:12px;color:#9ca3af">{{ status.memory_max }} MB</span>
+                        </div>
+                        <div class="progress-bg">
+                            <div class="progress-fill" style="width:{{ status.memory_usage_percent }}%; background-color: {{ memory_color(status.memory_usage_percent) }}"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% if status.worlds %}
+            <div class="world-section">
+                <div class="stat-label">世界列表</div>
+                <div class="world-list">
+                    {% for world in status.worlds %}
+                    <div class="world-item">
+                        <span class="world-name">{{ world.name }}</span>
+                        <div class="world-metrics">
+                            <span class="metric">👤 {{ world.players|default(0) }}</span>
+                            <span class="metric">🐮 {{ world.entities|default(0) }}</span>
+                            <span class="metric">📦 {{ world.loadedChunks|default(0) }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+    </div>
+</body>
+</html>

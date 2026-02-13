@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background-color: #f5f5f5;
+            color: #1f2937;
+            margin: 0;
+            padding: 0;
+            width: 1280px;
+            min-height: 720px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            zoom: 2.0;
+            background: #ffffff;
+            width: 600px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: none;
+        }
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f3f4f6;
+        }
+        .avatar-large {
+            width: 64px;
+            height: 64px;
+            background: #eff6ff;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border: 1px solid #e5e7eb;
+        }
+        .profile-info h1 {
+            margin: 0;
+            font-size: 22px;
+            color: #111827;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 800;
+        }
+        .uuid {
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 6px;
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        .op-badge {
+            background: #fef3c7;
+            color: #b45309;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            text-transform: uppercase;
+            border: 1px solid #fcd34d;
+        }
+        
+        .stat-group {
+            margin-top: 0;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+        .stat-label { color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; }
+        .stat-val { color: #374151; font-weight: 700; }
+        
+        .bar-container {
+            height: 8px;
+            background: #f3f4f6;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+        .bar-fill { height: 100%; border-radius: 4px; }
+        .health-fill { background-color: #ef4444; }
+        .food-fill { background-color: #f59e0b; }
+        .exp-fill { background-color: #10b981; }
+        
+        .grid-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 6px;
+        }
+        .detail-item {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #f3f4f6;
+        }
+        .detail-label { font-size: 11px; color: #6b7280; display: block; margin-bottom: 4px; text-transform: uppercase; font-weight: 600; }
+        .detail-content { font-size: 14px; color: #1f2937; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="profile-header">
+                <div class="avatar-large">
+                    <img src="https://minotar.net/avatar/{{ player.uuid }}/100.png" width="56" height="56"
+                         onerror="this.style.display='none';this.parentNode.innerText='👤'"
+                         style="border-radius: 12px;" />
+                </div>
+                <div class="profile-info">
+                    <h1>
+                        {{ player.name }}
+                        {% if player.is_op %}<span class="op-badge">管理员</span>{% endif %}
+                    </h1>
+                    <div class="uuid">{{ player.uuid }}</div>
+                </div>
+            </div>
+
+            <!-- Vitals -->
+            <div class="stat-group">
+                <div class="stat-row">
+                    <span class="stat-label">❤️ 生命值</span>
+                    <span class="stat-val">{{ "%.1f"|format(player.health) }} / {{ "%.1f"|format(player.max_health) }}</span>
+                </div>
+                <div class="bar-container">
+                    <div class="bar-fill health-fill" style="width: {{ (player.health / player.max_health * 100)|round }}%"></div>
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">🍖 饥饿值</span>
+                    <span class="stat-val">{{ player.food_level }} / 20</span>
+                </div>
+                <div class="bar-container">
+                    <div class="bar-fill food-fill" style="width: {{ (player.food_level / 20 * 100)|round }}%"></div>
+                </div>
+
+                <div class="stat-row">
+                    <span class="stat-label">⭐ 等级 {{ player.level }}</span>
+                    <span class="stat-val">{{ "%.1f"|format(player.exp * 100) }}%</span>
+                </div>
+                <div class="bar-container" style="margin-bottom:0">
+                    <div class="bar-fill exp-fill" style="width: {{ (player.exp * 100)|round }}%"></div>
+                </div>
+            </div>
+
+            <!-- Details -->
+            <div class="grid-info">
+                <div class="detail-item">
+                    <span class="detail-label">所在世界</span>
+                    <span class="detail-content">{{ player.world }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">游戏模式</span>
+                    <span class="detail-content">
+                        {% if player.game_mode == "SURVIVAL" %}生存
+                        {% elif player.game_mode == "CREATIVE" %}创造
+                        {% elif player.game_mode == "ADVENTURE" %}冒险
+                        {% elif player.game_mode == "SPECTATOR" %}旁观
+                        {% else %}{{ player.game_mode }}{% endif %}
+                    </span>
+                </div>
+                <div class="detail-item" style="grid-column: span 2">
+                    <span class="detail-label">坐标位置</span>
+                    <span class="detail-content">
+                        X: {{ "%.0f"|format(player.location.x) }}
+                        Y: {{ "%.0f"|format(player.location.y) }}
+                        Z: {{ "%.0f"|format(player.location.z) }}
+                    </span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">在线时长</span>
+                    <span class="detail-content">{{ player.online_time_formatted|default("未知") }}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">网络延迟</span>
+                    <span class="detail-content">{{ player.ping }} ms</span>
+                </div>
+            </div>
+    </div>
+</body>
+</html>

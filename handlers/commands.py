@@ -466,9 +466,7 @@ class CommandHandler:
             choices = self._format_server_choices(servers)
             return (
                 None,
-                "❌ 服务器编号无效，请使用以下编号:\n"
-                f"{choices}\n"
-                f"示例: {command_hint}",
+                f"❌ 服务器编号无效，请使用以下编号:\n{choices}\n示例: {command_hint}",
             )
 
         return servers[server_no - 1], ""
@@ -490,10 +488,19 @@ class CommandHandler:
         cmd_name = parts[0].lower()
 
         cmd_list = [c.lower() for c in config.cmd_list]
+        list_mode = (config.cmd_white_black_list or "white").lower()
 
-        if config.cmd_white_black_list == "white":
+        if list_mode == "none":
+            # 不启用黑白名单
+            return True
+
+        if list_mode == "white":
             # 白名单模式：仅在列表中则允许
             return cmd_name in cmd_list
-        else:
+
+        if list_mode == "black":
             # 黑名单模式：不在列表中则允许
             return cmd_name not in cmd_list
+
+        # 未知模式，回退为白名单
+        return cmd_name in cmd_list

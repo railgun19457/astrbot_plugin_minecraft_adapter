@@ -258,7 +258,7 @@ class MinecraftAdapterPlugin(Star):
                 yield result
 
     @mc_group.command("cmd")
-    async def cmd_execute(self, event: AstrMessageEvent, command: GreedyStr = ""):
+    async def cmd_execute(self, event: AstrMessageEvent, command=GreedyStr):
         """远程执行服务器指令"""
         if self.command_handler:
             async for result in self.command_handler.handle_cmd(event, str(command)):

@@ -115,8 +115,8 @@
               "cmd_white_black_list": {
                 "type": "string",
                 "description": "指令名单类型",
-                "hint": "white: 仅允许名单内指令；black: 禁止名单内指令",
-                "options": ["white", "black"],
+                "hint": "white: 仅允许名单内指令；black: 禁止名单内指令；none: 不启用黑白名单",
+                "options": ["white", "black", "none"],
                 "default": "white"
               },
               "cmd_list": {

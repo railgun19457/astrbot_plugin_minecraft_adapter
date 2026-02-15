@@ -137,7 +137,8 @@
                 "hint": "自定义快捷指令。格式：触发词 <&参数&><<>>实际指令 {参数} {sender}。{sender}为用户绑定的游戏ID",
                 "default": [
                   "head <&player&><<>>give {sender} minecraft:player_head[minecraft:profile={player}] 1",
-                  "tpa <&player&><<>>tpa {sender} {player}"
+                  "tpa <&player&><<>>tpa {sender} {player}",
+                  "tp <&X&> <&y&> <&z&><<>>tp {sender} <&X&> <&y&> <&z&>"
                 ]
               }
             }

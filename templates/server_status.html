@@ -151,11 +151,15 @@
                     <div class="stat-item">
                         <span class="stat-label">在线玩家</span>
                         <span class="stat-value">{{ online_count }} <span style="font-size:15px;color:#9ca3af;font-weight:500">/ {{ max_players }}</span></span>
+                        {% if is_proxy and aggregate_online > 0 %}
+                        <span style="font-size:12px;color:#6b7280;margin-top:2px">总计: {{ aggregate_online }}/{{ aggregate_max }}</span>
+                        {% endif %}
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">运行时间</span>
                         <span class="stat-value">{{ uptime }}</span>
                     </div>
+                    {% if not is_proxy %}
                     <div class="stat-item">
                         <span class="stat-label">TPS (1m/5m/15m)</span>
                         <span class="stat-value">
@@ -166,8 +170,9 @@
                             <span class="{{ tps_class(status.tps_15m) }}">{{ "%.1f"|format(status.tps_15m) }}</span>
                         </span>
                     </div>
+                    {% endif %}
                     <div class="stat-item">
-                        <span class="stat-label">内存使用</span>
+                        <span class="stat-label">{% if is_proxy %}代理端{% endif %}内存使用</span>
                         <div style="display:flex; justify-content:space-between; align-items:baseline;">
                             <span class="stat-value {{ memory_class(status.memory_usage_percent) }}">
                                 {{ status.memory_used }} MB
@@ -197,6 +202,40 @@
                     {% endfor %}
                 </div>
             </div>
+            {% endif %}
+
+            {% if is_proxy and backends %}
+            {% for backend in backends %}
+            <div class="world-section">
+                <div class="stat-label" style="display:flex;align-items:center;gap:8px">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{% if backend.online %}#059669{% else %}#dc2626{% endif %}"></span>
+                    后端: {{ backend.name }}
+                    <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:#9ca3af">{{ backend.platform }} {{ backend.version }}</span>
+                </div>
+                <div class="world-list" style="margin-top:8px">
+                    <div class="world-item">
+                        <span class="world-name">在线玩家</span>
+                        <div class="world-metrics"><span class="metric">{{ backend.online_players }}/{{ backend.max_players }}</span></div>
+                    </div>
+                    <div class="world-item">
+                        <span class="world-name">TPS</span>
+                        <div class="world-metrics">
+                            <span class="metric {{ tps_class(backend.tps_1m) }}">{{ "%.1f"|format(backend.tps_1m) }}</span>
+                            <span class="metric" style="color:#e5e7eb">|</span>
+                            <span class="metric {{ tps_class(backend.tps_5m) }}">{{ "%.1f"|format(backend.tps_5m) }}</span>
+                            <span class="metric" style="color:#e5e7eb">|</span>
+                            <span class="metric {{ tps_class(backend.tps_15m) }}">{{ "%.1f"|format(backend.tps_15m) }}</span>
+                        </div>
+                    </div>
+                    <div class="world-item">
+                        <span class="world-name">内存</span>
+                        <div class="world-metrics">
+                            <span class="metric {{ memory_class(backend.memory_usage_percent) }}">{{ backend.memory_used }}MB / {{ backend.memory_max }}MB</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
             {% endif %}
     </div>
 </body>

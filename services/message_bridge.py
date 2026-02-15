@@ -1,6 +1,7 @@
 """MC 与其他平台之间转发消息的消息桥接服务"""
 
 import re
+import time
 from typing import TYPE_CHECKING
 
 from astrbot.api import logger
@@ -32,6 +33,11 @@ class MessageBridge:
         self._session_to_servers: dict[str, list[tuple[str, ServerConfig]]] = {}
         # 从 server_id 到配置的映射
         self._server_configs: dict[str, ServerConfig] = {}
+        # Track recently forwarded messages to suppress echo
+        # Key: (server_id, content_hash), Value: timestamp
+        self._recently_forwarded: dict[tuple[str, str], float] = {}
+        # Echo suppression window in seconds
+        self._echo_suppress_window = 5.0
 
     def register_server(self, config: ServerConfig):
         """注册用于消息转发的服务器"""
@@ -69,6 +75,18 @@ class MessageBridge:
         if msg.type == MessageType.MESSAGE_FORWARD:
             if not config.forward_chat_to_astrbot:
                 return False
+            # Suppress echo: if this message was recently forwarded FROM external
+            content = msg.payload.get("content", "")
+            echo_key = (server_id, content)
+            now = time.time()
+            if echo_key in self._recently_forwarded:
+                if (
+                    now - self._recently_forwarded[echo_key]
+                    < self._echo_suppress_window
+                ):
+                    del self._recently_forwarded[echo_key]
+                    return False
+                del self._recently_forwarded[echo_key]
         elif msg.type in (MessageType.PLAYER_JOIN, MessageType.PLAYER_QUIT):
             if not config.forward_join_leave_to_astrbot:
                 return False
@@ -108,30 +126,28 @@ class MessageBridge:
         if msg.type == MessageType.MESSAGE_FORWARD:
             player_name = msg.source.player_name if msg.source else "未知"
             content = msg.payload.get("content", "")
-            # 应用格式模板
             return config.forward_chat_format.format(
                 player=player_name, message=content
             )
 
-        elif msg.type == MessageType.PLAYER_JOIN:
-            player = msg.payload.get("player", {})
-            player_name = player.get("name", "未知")
+        if msg.type in (MessageType.PLAYER_JOIN, MessageType.PLAYER_QUIT):
+            player_name = msg.source.player_name if msg.source else "未知"
+            server_name = msg.source.server_name if msg.source else ""
             online = msg.payload.get("onlineCount", 0)
             max_players = msg.payload.get("maxPlayers", 0)
-            return f"🟢 {player_name} 加入了服务器 ({online}/{max_players})"
+            count_part = f" ({online}/{max_players})" if max_players else ""
+            server_part = f" {server_name}" if server_name else "服务器"
 
-        elif msg.type == MessageType.PLAYER_QUIT:
-            player = msg.payload.get("player", {})
-            player_name = player.get("name", "未知")
-            online = msg.payload.get("onlineCount", 0)
-            max_players = msg.payload.get("maxPlayers", 0)
+            if msg.type == MessageType.PLAYER_JOIN:
+                return f"🟢 {player_name} 加入了{server_part}{count_part}"
+
             reason = msg.payload.get("reason", "QUIT")
             reason_text = {
                 "QUIT": "离开",
                 "KICK": "被踢出",
                 "TIMEOUT": "超时断开",
             }.get(reason, "离开")
-            return f"🔴 {player_name} {reason_text}了服务器 ({online}/{max_players})"
+            return f"🔴 {player_name} {reason_text}了{server_part}{count_part}"
 
         return ""
 
@@ -169,6 +185,7 @@ class MessageBridge:
         umo = event.unified_msg_origin
 
         # 检查每个服务器配置
+        any_forwarded = False
         for server_id, config in self._server_configs.items():
             # 检查此会话是否在目标会话列表中
             if not config.target_sessions or umo not in config.target_sessions:
@@ -202,31 +219,54 @@ class MessageBridge:
                 )
 
                 if success:
-                    # 根据配置发送反馈
-                    await self._send_forward_feedback(event, config)
-                    return True
+                    # Track this message to suppress echo
+                    echo_key = (server_id, content)
+                    self._recently_forwarded[echo_key] = time.time()
+                    # Clean up old entries
+                    self._cleanup_recently_forwarded()
+                    # Send feedback based on mark_option (only once)
+                    if not any_forwarded:
+                        await self._send_forward_feedback(event, config)
+                    any_forwarded = True
 
-        return False
+        return any_forwarded
 
     async def _send_forward_feedback(
         self, event: AstrMessageEvent, config: ServerConfig
     ):
-        """在消息转发成功后发送反馈"""
+        """在消息转发成功后发送反馈
+
+        Behavior by mark_option:
+        - "none": do nothing
+        - "emoji": only react with emoji, no text message
+        - "text": only send text confirmation "✓ 消息已转发"
+        """
         mark_option = config.mark_option
 
         if mark_option == "none":
             return
 
         elif mark_option == "emoji":
-            # 尝试使用 napcat/onebot API 作出表情响应
+            # Only emoji reaction, no text
             await self._react_with_emoji(event)
 
         elif mark_option == "text":
-            # 发送文本确认
+            # Only text confirmation
             try:
                 await event.send(MessageChain([Plain(text="✓ 消息已转发")]))
             except Exception:
                 pass
+
+    def _cleanup_recently_forwarded(self):
+        """Clean up expired entries in the recently forwarded tracker"""
+        now = time.time()
+        expired = [
+            k
+            for k, t in self._recently_forwarded.items()
+            if now - t > self._echo_suppress_window
+        ]
+        for k in expired:
+            del self._recently_forwarded[k]
 
     async def _react_with_emoji(
         self, event: AstrMessageEvent, emoji_id: int = EMOJI_OK_GESTURE

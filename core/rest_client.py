@@ -106,14 +106,27 @@ class RestClient:
         """获取服务器信息"""
         resp = await self._get("/server/info")
         if resp.success and resp.data:
-            return ServerInfo.from_dict(resp.data), ""
+            info = ServerInfo.from_dict(resp.data)
+            if info.is_proxy:
+                logger.debug(
+                    f"[MC-{self.server_id}] 代理模式: "
+                    f"{info.backend_count}个后端, "
+                    f"总在线{info.aggregate_online}/{info.aggregate_max}"
+                )
+            return info, ""
         return None, resp.message
 
     async def get_server_status(self) -> tuple[ServerStatus | None, str]:
         """获取服务器状态"""
         resp = await self._get("/server/status")
         if resp.success and resp.data:
-            return ServerStatus.from_dict(resp.data), ""
+            status = ServerStatus.from_dict(resp.data)
+            if status.is_proxy:
+                logger.debug(
+                    f"[MC-{self.server_id}] 代理状态: "
+                    f"{len(status.backends)}个后端已上报"
+                )
+            return status, ""
         return None, resp.message
 
     async def health_check(self) -> bool:
@@ -142,19 +155,16 @@ class RestClient:
             return players, total, ""
         return [], 0, resp.message
 
-    async def get_player_by_uuid(self, uuid: str) -> tuple[PlayerDetail | None, str]:
-        """通过 UUID 获取玩家详细信息"""
-        resp = await self._get(f"/players/{uuid}")
+    async def get_player(self, identifier: str) -> tuple[PlayerDetail | None, str]:
+        """通过 UUID 或名称获取玩家详细信息"""
+        resp = await self._get(f"/players/{identifier}")
         if resp.success and resp.data:
             return PlayerDetail.from_dict(resp.data), ""
         return None, resp.message
 
-    async def get_player_by_name(self, name: str) -> tuple[PlayerDetail | None, str]:
-        """通过名称获取玩家详细信息"""
-        resp = await self._get(f"/players/{name}")
-        if resp.success and resp.data:
-            return PlayerDetail.from_dict(resp.data), ""
-        return None, resp.message
+    # Aliases for backward compatibility
+    get_player_by_uuid = get_player
+    get_player_by_name = get_player
 
     # 命令 APIs
 
@@ -164,8 +174,16 @@ class RestClient:
         executor: str = "CONSOLE",
         player_uuid: str | None = None,
         is_async: bool = False,
+        target_server: str | None = None,
     ) -> tuple[bool, str, Any]:
         """在服务器上执行命令
+
+        参数:
+            command: 要执行的指令（不带/）
+            executor: 执行者 CONSOLE/PLAYER
+            player_uuid: executor为PLAYER时指定
+            is_async: 是否异步执行
+            target_server: 目标后端服务器名称（仅代理端有效）
 
         返回:
             tuple: (成功, 输出/错误消息, 原始数据)
@@ -177,6 +195,8 @@ class RestClient:
         }
         if player_uuid:
             json_data["playerUuid"] = player_uuid
+        if target_server:
+            json_data["targetServer"] = target_server
 
         resp = await self._post("/command/execute", json_data=json_data)
 

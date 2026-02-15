@@ -8,6 +8,15 @@ from ..core.models import ChatMode
 from ..core.server_manager import ServerConnection
 
 
+def _extract_text(message_chain: MessageChain) -> str:
+    """Extract plain text content from a MessageChain."""
+    return "".join(
+        component.text
+        for component in message_chain.chain
+        if isinstance(component, Plain)
+    )
+
+
 class MCMessageEvent(AstrMessageEvent):
     """用于 Minecraft 平台的消息事件"""
 
@@ -30,14 +39,7 @@ class MCMessageEvent(AstrMessageEvent):
 
     async def send(self, message: MessageChain):
         """将响应消息发送回 Minecraft"""
-        # 从消息链提取文本内容
-        content_parts = []
-        for component in message.chain:
-            if isinstance(component, Plain):
-                content_parts.append(component.text)
-
-        content = "".join(content_parts)
-
+        content = _extract_text(message)
         if not content:
             return
 

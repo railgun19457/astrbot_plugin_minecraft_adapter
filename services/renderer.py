@@ -1,9 +1,8 @@
 """将服务器信息格式化为图片或文本的渲染服务"""
 
-import html
-import os
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jinja2 import Environment, FileSystemLoader
@@ -12,12 +11,12 @@ from astrbot.api import logger
 from astrbot.core.utils.t2i.renderer import HtmlRenderer
 
 if TYPE_CHECKING:
-    from ..core.models import PlayerDetail, PlayerInfo, ServerInfo, ServerStatus
-
-
-def escape(text: str) -> str:
-    """转义 HTML 特殊字符"""
-    return html.escape(str(text))
+    from ..core.models import (
+        PlayerDetail,
+        PlayerInfo,
+        ServerInfo,
+        ServerStatus,
+    )
 
 
 @dataclass
@@ -59,8 +58,8 @@ class InfoRenderer:
         self._html_renderer: HtmlRenderer | None = None
 
         # 初始化 Jinja2 环境
-        template_dir = os.path.join(os.path.dirname(__file__), "..", "templates")
-        self.env = Environment(loader=FileSystemLoader(template_dir))
+        template_dir = Path(__file__).parent.parent / "templates"
+        self.env = Environment(loader=FileSystemLoader(str(template_dir)))
 
     async def _ensure_renderer(self):
         """确保 HTML 渲染器已初始化"""
@@ -70,45 +69,41 @@ class InfoRenderer:
 
     # 命令处理器调用的主入口方法
 
+    async def _render_as_image(self, html_content: str) -> RenderResult | None:
+        """Render HTML content to image. Returns RenderResult or None on failure."""
+        try:
+            await self._ensure_renderer()
+            options = {
+                "quality": 100,
+                "device_scale_factor_level": "normal",
+                "full_page": True,
+                "omit_background": False,
+                "type": "jpeg",
+            }
+            image_path = await self._html_renderer.render_custom_template(
+                tmpl_str=html_content, tmpl_data={}, return_url=False, options=options
+            )
+            with open(image_path, "rb") as f:
+                return RenderResult(BytesIO(f.read()), is_image=True)
+        except Exception as e:
+            logger.warning(f"[Renderer] 渲染图片失败，回退到文本模式: {e}")
+            return None
+
     async def render_server_status(
         self,
         server_info: "ServerInfo",
         server_status: "ServerStatus",
         as_image: bool = True,
     ) -> RenderResult:
-        """将服务器状态渲染为图片或文本
-
-        参数:
-            server_info: 服务器信息
-            server_status: 服务器状态指标
-            as_image: 是否渲染为图片（需要启用 text2image）
-
-        返回:
-            RenderResult 包含渲染内容
-        """
+        """将服务器状态渲染为图片或文本"""
         if as_image and self.text2image_enabled:
-            try:
-                await self._ensure_renderer()
-                html = self.render_server_status_html(server_info, server_status)
-
-                options = {
-                    "quality": 100,
-                    "device_scale_factor_level": "normal",
-                    "full_page": True,
-                    "omit_background": False,
-                    "type": "jpeg",
-                }
-                image_path = await self._html_renderer.render_custom_template(
-                    tmpl_str=html, tmpl_data={}, return_url=False, options=options
-                )
-                # 读取图片文件并作为 BytesIO 返回
-                with open(image_path, "rb") as f:
-                    return RenderResult(BytesIO(f.read()), is_image=True)
-            except Exception as e:
-                logger.warning(f"[Renderer] 渲染图片失败，回退到文本模式: {e}")
+            html_content = self.render_server_status_html(server_info, server_status)
+            result = await self._render_as_image(html_content)
+            if result:
+                return result
 
         return RenderResult(
-            self.render_server_status_text(server_info, server_status), is_image=False
+            self._format_server_status_text(server_info, server_status), is_image=False
         )
 
     async def render_player_list(
@@ -118,41 +113,15 @@ class InfoRenderer:
         server_name: str = "",
         as_image: bool = True,
     ) -> RenderResult:
-        """将玩家列表渲染为图片或文本
-
-        参数:
-            players: 在线玩家列表
-            total: 玩家总数
-            server_name: 用于显示的服务器名称
-            as_image: 是否渲染为图片（需要启用 text2image）
-
-        返回:
-            RenderResult 包含渲染内容
-        """
+        """将玩家列表渲染为图片或文本"""
         if as_image and self.text2image_enabled:
-            try:
-                await self._ensure_renderer()
-                html = self.render_player_list_html(players, total, server_name)
-
-                options = {
-                    "quality": 100,
-                    "device_scale_factor_level": "normal",
-                    "full_page": True,
-                    "omit_background": False,
-                    "type": "jpeg",
-                }
-
-                image_path = await self._html_renderer.render_custom_template(
-                    tmpl_str=html, tmpl_data={}, return_url=False, options=options
-                )
-                # 读取图片文件并作为 BytesIO 返回
-                with open(image_path, "rb") as f:
-                    return RenderResult(BytesIO(f.read()), is_image=True)
-            except Exception as e:
-                logger.warning(f"[Renderer] 渲染图片失败，回退到文本模式: {e}")
+            html_content = self.render_player_list_html(players, total, server_name)
+            result = await self._render_as_image(html_content)
+            if result:
+                return result
 
         return RenderResult(
-            self.render_player_list_text(players, total, server_name), is_image=False
+            self._format_player_list_text(players, total, server_name), is_image=False
         )
 
     async def render_player_detail(
@@ -160,48 +129,16 @@ class InfoRenderer:
         player: "PlayerDetail",
         as_image: bool = True,
     ) -> RenderResult:
-        """将玩家详情渲染为图片或文本
-
-        参数:
-            player: 玩家详细信息
-            as_image: 是否渲染为图片（需要启用 text2image）
-
-        返回:
-            RenderResult 包含渲染内容
-        """
+        """将玩家详情渲染为图片或文本"""
         if as_image and self.text2image_enabled:
-            try:
-                await self._ensure_renderer()
-                html = self.render_player_detail_html(player)
+            html_content = self.render_player_detail_html(player)
+            result = await self._render_as_image(html_content)
+            if result:
+                return result
 
-                options = {
-                    "quality": 100,
-                    "device_scale_factor_level": "normal",
-                    "full_page": True,
-                    "omit_background": False,
-                    "type": "jpeg",
-                }
+        return RenderResult(self._format_player_detail_text(player), is_image=False)
 
-                image_path = await self._html_renderer.render_custom_template(
-                    tmpl_str=html, tmpl_data={}, return_url=False, options=options
-                )
-                # 读取图片文件并作为 BytesIO 返回
-                with open(image_path, "rb") as f:
-                    return RenderResult(BytesIO(f.read()), is_image=True)
-            except Exception as e:
-                logger.warning(f"[Renderer] 渲染图片失败，回退到文本模式: {e}")
-
-        return RenderResult(self.render_player_detail_text(player), is_image=False)
-
-    # 文本/HTML 渲染方法
-
-    def render_server_status_text(
-        self,
-        server_info: "ServerInfo",
-        server_status: "ServerStatus",
-    ) -> str:
-        """将服务器状态渲染为文本"""
-        return self._format_server_status_text(server_info, server_status)
+    # HTML 渲染方法
 
     def render_server_status_html(
         self,
@@ -245,19 +182,14 @@ class InfoRenderer:
             online_count=online_count,
             max_players=max_players,
             uptime=uptime_formatted,
+            is_proxy=server_info.is_proxy,
+            backends=server_status.backends,
+            aggregate_online=server_info.aggregate_online,
+            aggregate_max=server_info.aggregate_max,
             tps_class=tps_class,
             memory_class=memory_class,
             memory_color=memory_color,
         )
-
-    def render_player_list_text(
-        self,
-        players: list["PlayerInfo"],
-        total: int,
-        server_name: str = "",
-    ) -> str:
-        """将玩家列表渲染为文本"""
-        return self._format_player_list_text(players, total, server_name)
 
     def render_player_list_html(
         self,
@@ -274,17 +206,25 @@ class InfoRenderer:
                 return "ping-fair"
             return "ping-bad"
 
+        # Check if players have backend server info (proxy mode)
+        has_server_field = any(p.server for p in players)
+        grouped: dict[str, list] = {}
+        if has_server_field:
+            for p in players:
+                srv = p.server or "未知"
+                if srv not in grouped:
+                    grouped[srv] = []
+                grouped[srv].append(p)
+
         template = self.env.get_template("player_list.html")
         return template.render(
-            players=players, total=total, server_name=server_name, ping_class=ping_class
+            players=players,
+            total=total,
+            server_name=server_name,
+            ping_class=ping_class,
+            has_server_field=has_server_field,
+            grouped=grouped,
         )
-
-    def render_player_detail_text(
-        self,
-        player: "PlayerDetail",
-    ) -> str:
-        """将玩家详情渲染为文本"""
-        return self._format_player_detail_text(player)
 
     def render_player_detail_html(
         self,
@@ -303,18 +243,39 @@ class InfoRenderer:
         online_count = info.online_count or status.online_players
         max_players = info.max_players or status.max_players
         uptime_formatted = info.uptime_formatted or status.uptime_formatted
+
         lines = [
             f"🖥️ 服务器状态 - {info.name}",
             "━━━━━━━━━━━━━━━━━━",
             f"平台: {info.platform} {info.minecraft_version}",
             f"在线玩家: {online_count}/{max_players}",
             f"运行时间: {uptime_formatted}",
-            "",
-            "📊 性能指标",
-            f"TPS: {status.tps_1m:.1f} / {status.tps_5m:.1f} / {status.tps_15m:.1f}",
-            f"内存: {status.memory_used}MB / {status.memory_max}MB "
-            f"({status.memory_usage_percent:.1f}%)",
         ]
+
+        # If proxy with backends, show aggregate info
+        if info.is_proxy and info.aggregate_online > 0:
+            lines.append(f"总在线: {info.aggregate_online}/{info.aggregate_max}")
+
+        # Show proxy's own performance if available (non-proxy)
+        if not status.is_proxy:
+            lines.append("")
+            lines.append("📊 性能指标")
+            lines.append(
+                f"TPS: {status.tps_1m:.1f} / {status.tps_5m:.1f} / {status.tps_15m:.1f}"
+            )
+            lines.append(
+                f"内存: {status.memory_used}MB / {status.memory_max}MB "
+                f"({status.memory_usage_percent:.1f}%)"
+            )
+        else:
+            # Proxy server memory
+            if status.memory_max > 0:
+                lines.append("")
+                lines.append("📊 代理端内存")
+                lines.append(
+                    f"内存: {status.memory_used}MB / {status.memory_max}MB "
+                    f"({status.memory_usage_percent:.1f}%)"
+                )
 
         if status.worlds:
             lines.append("")
@@ -324,6 +285,21 @@ class InfoRenderer:
                     f"  {world['name']}: {world.get('players', 0)}人, "
                     f"{world.get('entities', 0)}实体, "
                     f"{world.get('loadedChunks', 0)}区块"
+                )
+
+        # Backend server details for proxy mode
+        if status.is_proxy:
+            for backend in status.backends:
+                lines.append("")
+                lines.append(f"🔹 后端: {backend.name}")
+                lines.append(f"  平台: {backend.platform} {backend.version}")
+                lines.append(f"  在线: {backend.online_players}/{backend.max_players}")
+                lines.append(
+                    f"  TPS: {backend.tps_1m:.1f} / {backend.tps_5m:.1f} / {backend.tps_15m:.1f}"
+                )
+                lines.append(
+                    f"  内存: {backend.memory_used}MB / {backend.memory_max}MB "
+                    f"({backend.memory_usage_percent:.1f}%)"
                 )
 
         return "\n".join(lines)
@@ -341,20 +317,40 @@ class InfoRenderer:
         if not players:
             lines.append("当前没有玩家在线")
         else:
-            for p in players:
-                modes = {
-                    "SURVIVAL": ("生存", "⚔️"),
-                    "CREATIVE": ("创造", "🎨"),
-                    "ADVENTURE": ("冒险", "🗺️"),
-                    "SPECTATOR": ("旁观", "👻"),
-                }
-                mode_name, mode_emoji = modes.get(p.game_mode, ("未知", "❓"))
-                if not p.game_mode and (not p.world or p.world == "未知"):
-                    lines.append(f"👤 {p.name} | {p.ping}ms")
-                else:
-                    lines.append(f"{mode_emoji} {p.name} | {p.world} | {p.ping}ms")
+            # Check if any player has a server field (proxy mode)
+            has_server_field = any(p.server for p in players)
+
+            if has_server_field:
+                # Group players by backend server
+                grouped: dict[str, list[PlayerInfo]] = {}
+                for p in players:
+                    srv = p.server or "未知"
+                    if srv not in grouped:
+                        grouped[srv] = []
+                    grouped[srv].append(p)
+
+                for srv_name, srv_players in grouped.items():
+                    lines.append(f"\n🔹 {srv_name} ({len(srv_players)}人)")
+                    for p in srv_players:
+                        lines.append(self._format_player_line(p))
+            else:
+                for p in players:
+                    lines.append(self._format_player_line(p))
 
         return "\n".join(lines)
+
+    def _format_player_line(self, p: "PlayerInfo") -> str:
+        """Format a single player line for text output"""
+        modes = {
+            "SURVIVAL": ("生存", "⚔️"),
+            "CREATIVE": ("创造", "🎨"),
+            "ADVENTURE": ("冒险", "🗺️"),
+            "SPECTATOR": ("旁观", "👻"),
+        }
+        mode_name, mode_emoji = modes.get(p.game_mode, ("未知", "❓"))
+        if not p.game_mode and (not p.world or p.world == "未知"):
+            return f"👤 {p.name} | {p.ping}ms"
+        return f"{mode_emoji} {p.name} | {p.world} | {p.ping}ms"
 
     def _format_player_detail_text(self, player: "PlayerDetail") -> str:
         """将玩家详情格式化为文本"""
@@ -364,26 +360,31 @@ class InfoRenderer:
             "ADVENTURE": "冒险",
             "SPECTATOR": "旁观",
         }
-        mode_name = modes.get(player.game_mode, player.game_mode)
+        mode_name = modes.get(player.game_mode, player.game_mode or "未知")
 
         lines = [
             f"👤 玩家信息 - {player.name}",
             "━━━━━━━━━━━━━━━━━━",
             f"UUID: {player.uuid[:8]}...",
-            f"世界: {player.world}",
+            f"世界: {player.world or '未知'}",
             f"模式: {mode_name}",
             f"延迟: {player.ping}ms",
             "",
             f"❤️ 生命值: {player.health:.1f}/{player.max_health:.1f}",
             f"🍖 饥饿值: {player.food_level}/20",
             f"⭐ 等级: {player.level} ({player.exp * 100:.1f}%)",
-            "",
-            f"📍 位置: X={player.location.get('x', 0):.1f}, "
-            f"Y={player.location.get('y', 0):.1f}, "
-            f"Z={player.location.get('z', 0):.1f}",
-            "",
-            f"⏱️ 在线时长: {player.online_time_formatted or '未知'}",
         ]
+
+        if player.location:
+            lines.append("")
+            lines.append(
+                f"📍 位置: X={player.location.get('x', 0):.1f}, "
+                f"Y={player.location.get('y', 0):.1f}, "
+                f"Z={player.location.get('z', 0):.1f}"
+            )
+
+        lines.append("")
+        lines.append(f"⏱️ 在线时长: {player.online_time_formatted or '未知'}")
 
         if player.is_op:
             lines.insert(2, "⚡ 管理员")

@@ -5,6 +5,7 @@
 """
 
 import asyncio
+from contextlib import suppress
 from pathlib import Path
 
 from astrbot.api import logger
@@ -54,6 +55,7 @@ class MinecraftAdapterPlugin(Star):
 
         # 平台适配器
         self._adapters: dict[str, MCPlatformAdapter] = {}
+        self._adapter_tasks: dict[str, asyncio.Task] = {}
 
         # 命令处理器
         self.command_handler: CommandHandler | None = None
@@ -67,15 +69,26 @@ class MinecraftAdapterPlugin(Star):
         self._init_task: asyncio.Task | None = None
 
         # 加载配置并启动服务器
-        self._init_task = asyncio.create_task(self._initialize())
-        self._init_task.add_done_callback(self._on_init_done)
+        self._init_task = self._schedule_task(self._initialize(), "initialize")
 
-    def _on_init_done(self, task: asyncio.Task):
-        """初始化任务完成时的回调"""
+    def _schedule_task(self, coro, task_name: str) -> asyncio.Task | None:
+        """创建后台任务并统一处理异常，避免未捕获异常导致静默失败。"""
+        try:
+            task = asyncio.create_task(coro)
+        except RuntimeError as exc:
+            coro.close()
+            logger.error(f"[MC Adapter] 无法启动后台任务 {task_name}: {exc}")
+            return None
+
+        task.add_done_callback(lambda t: self._on_task_done(task_name, t))
+        return task
+
+    def _on_task_done(self, task_name: str, task: asyncio.Task):
+        """后台任务完成时的统一回调。"""
         try:
             exc = task.exception()
             if exc:
-                logger.error(f"[MC Adapter] 初始化失败: {exc}")
+                logger.error(f"[MC Adapter] 后台任务 {task_name} 异常退出: {exc}")
         except asyncio.CancelledError:
             pass
 
@@ -188,6 +201,15 @@ class MinecraftAdapterPlugin(Star):
         if config.enable_ai_chat:
             server = self.server_manager.get_server(server_id)
             if server:
+                # 防止重复连接时遗留旧适配器/任务
+                old_adapter = self._adapters.pop(server_id, None)
+                if old_adapter:
+                    await old_adapter.stop()
+
+                old_task = self._adapter_tasks.pop(server_id, None)
+                if old_task and not old_task.done():
+                    old_task.cancel()
+
                 event_queue = (
                     self.context.platform_manager.event_queue
                     if self.context and self.context.platform_manager
@@ -201,7 +223,9 @@ class MinecraftAdapterPlugin(Star):
                 self._adapters[server_id] = adapter
 
                 # 启动适配器（非阻塞）
-                asyncio.create_task(adapter.run())
+                task = self._schedule_task(adapter.run(), f"adapter:{server_id}")
+                if task:
+                    self._adapter_tasks[server_id] = task
 
                 logger.info(f"[MC-{server_id}] 平台适配器已注册")
 
@@ -214,9 +238,9 @@ class MinecraftAdapterPlugin(Star):
         if adapter:
             await adapter.stop()
 
-    def _get_server_config(self, server_id: str) -> ServerConfig | None:
-        """根据 ID 获取服务器配置"""
-        return self._server_configs.get(server_id)
+        task = self._adapter_tasks.pop(server_id, None)
+        if task and not task.done():
+            task.cancel()
 
     # 命令处理器
 
@@ -228,183 +252,124 @@ class MinecraftAdapterPlugin(Star):
     @mc_group.command("help")
     async def cmd_help(self, event: AstrMessageEvent):
         """显示帮助信息"""
-        if self.command_handler:
-            async for result in self.command_handler.handle_help(event):
-                yield result
+        async for result in self._dispatch_command("handle_help", event):
+            yield result
 
     @mc_group.command("status")
-    async def cmd_status(self, event: AstrMessageEvent, server_no: int = 0):
+    async def cmd_status(self, event: AstrMessageEvent):
         """查看服务器状态"""
-        if self.command_handler:
-            async for result in self.command_handler.handle_status(event, server_no):
-                yield result
+        async for result in self._dispatch_command("handle_status", event):
+            yield result
 
     @mc_group.command("list")
-    async def cmd_list(self, event: AstrMessageEvent, server_no: int = 0):
+    async def cmd_list(self, event: AstrMessageEvent):
         """查看在线玩家列表"""
-        if self.command_handler:
-            async for result in self.command_handler.handle_list(event, server_no):
-                yield result
+        async for result in self._dispatch_command("handle_list", event):
+            yield result
 
     @mc_group.command("player")
-    async def cmd_player(
-        self, event: AstrMessageEvent, player_id: str, server_no: int = 0
-    ):
+    async def cmd_player(self, event: AstrMessageEvent, player_id: str):
         """查看玩家详细信息"""
-        if self.command_handler:
-            async for result in self.command_handler.handle_player(
-                event, player_id, server_no
-            ):
-                yield result
+        async for result in self._dispatch_command("handle_player", event, player_id):
+            yield result
 
     @mc_group.command("cmd")
     async def cmd_execute(self, event: AstrMessageEvent, command=GreedyStr):
         """远程执行服务器指令"""
-        if self.command_handler:
-            async for result in self.command_handler.handle_cmd(event, str(command)):
-                yield result
+        async for result in self._dispatch_command("handle_cmd", event, str(command)):
+            yield result
 
     @mc_group.command("bind")
-    async def cmd_bind(
-        self, event: AstrMessageEvent, player_id: str, server_no: int = 0
-    ):
+    async def cmd_bind(self, event: AstrMessageEvent, player_id: str):
         """绑定游戏ID"""
-        if self.command_handler:
-            async for result in self.command_handler.handle_bind(
-                event, player_id, server_no
-            ):
-                yield result
+        async for result in self._dispatch_command("handle_bind", event, player_id):
+            yield result
 
     @mc_group.command("unbind")
     async def cmd_unbind(self, event: AstrMessageEvent):
         """解除绑定"""
-        if self.command_handler:
-            async for result in self.command_handler.handle_unbind(event):
-                yield result
+        async for result in self._dispatch_command("handle_unbind", event):
+            yield result
+
+    async def _dispatch_command(self, method_name: str, event: AstrMessageEvent, *args):
+        """统一分发到命令处理器，减少重复样板代码。"""
+        if not self.command_handler:
+            return
+
+        handler = getattr(self.command_handler, method_name, None)
+        if not handler:
+            logger.warning(f"[MC Adapter] 未找到命令处理方法: {method_name}")
+            return
+
+        async for result in handler(event, *args):
+            yield result
 
     # 消息转发监听器
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
-        """监听需要转发到 MC 服务器的消息，并处理自定义指令"""
-        # 允许在未唤醒状态下直接使用 `mc ...` 指令
-        if self.command_handler and not event.is_at_or_wake_command:
-            text = event.get_message_str().strip()
-            if text:
-                parts = text.split()
-                if parts and parts[0].lower() == "mc":
-                    subcommand = parts[1].lower() if len(parts) > 1 else "help"
-                    args = parts[2:]
+        """监听需要转发到 MC 服务器的消息，并处理自定义指令和待选操作
 
-                    if subcommand == "help":
-                        async for result in self.command_handler.handle_help(event):
-                            yield result
-                        event.stop_event()
-                        return
+        Note: mc 子命令（help/status/list 等）已由 @mc_group.command()
+        装饰器处理，此处仅处理：
+        1. 待选操作的数字输入（多服务器选择）
+        2. 自定义指令匹配
+        3. 消息转发到 MC 服务器
+        """
+        # Skip messages already handled by command group (wake prefix / @)
+        if event.is_at_or_wake_command:
+            return
 
-                    if subcommand == "status":
-                        if args and not args[0].isdigit():
-                            yield event.plain_result("❌ 服务器编号应为数字")
-                            event.stop_event()
-                            return
-                        server_no = int(args[0]) if args else 0
-                        async for result in self.command_handler.handle_status(
-                            event, server_no
-                        ):
-                            yield result
-                        event.stop_event()
-                        return
-
-                    if subcommand == "list":
-                        if args and not args[0].isdigit():
-                            yield event.plain_result("❌ 服务器编号应为数字")
-                            event.stop_event()
-                            return
-                        server_no = int(args[0]) if args else 0
-                        async for result in self.command_handler.handle_list(
-                            event, server_no
-                        ):
-                            yield result
-                        event.stop_event()
-                        return
-
-                    if subcommand == "player":
-                        if not args:
-                            yield event.plain_result("❌ 请指定玩家ID")
-                            event.stop_event()
-                            return
-                        player_id = args[0]
-                        if len(args) > 1 and not args[1].isdigit():
-                            yield event.plain_result("❌ 服务器编号应为数字")
-                            event.stop_event()
-                            return
-                        server_no = int(args[1]) if len(args) > 1 else 0
-                        async for result in self.command_handler.handle_player(
-                            event, player_id, server_no
-                        ):
-                            yield result
-                        event.stop_event()
-                        return
-
-                    if subcommand == "cmd":
-                        command = " ".join(args)
-                        async for result in self.command_handler.handle_cmd(
-                            event, command
-                        ):
-                            yield result
-                        event.stop_event()
-                        return
-
-                    if subcommand == "bind":
-                        if not args:
-                            yield event.plain_result("❌ 请指定要绑定的游戏ID")
-                            event.stop_event()
-                            return
-                        player_id = args[0]
-                        if len(args) > 1 and not args[1].isdigit():
-                            yield event.plain_result("❌ 服务器编号应为数字")
-                            event.stop_event()
-                            return
-                        server_no = int(args[1]) if len(args) > 1 else 0
-                        async for result in self.command_handler.handle_bind(
-                            event, player_id, server_no
-                        ):
-                            yield result
-                        event.stop_event()
-                        return
-
-                    if subcommand == "unbind":
-                        async for result in self.command_handler.handle_unbind(event):
-                            yield result
-                        event.stop_event()
-                        return
-
-                    async for result in self.command_handler.handle_help(event):
-                        yield result
-                    event.stop_event()
-                    return
-
-        # 先检查自定义指令
-        if self.command_handler:
-            handled = await self.command_handler.handle_custom_command(event)
-            if handled:
+        if not self.command_handler:
+            # No command handler, only try message forwarding
+            if await self.message_bridge.handle_external_message(event):
                 event.stop_event()
-                return
+            return
 
-        # 检查此消息是否应该被转发
-        forwarded = await self.message_bridge.handle_external_message(event)
-        if forwarded:
+        text = event.get_message_str().strip()
+        umo = event.unified_msg_origin
+
+        # Handle pending server/backend selection (number input)
+        if text and text.isdigit() and self.command_handler.has_pending_action(umo):
+            async for result in self.command_handler.dispatch_number_selection(event):
+                yield result
             event.stop_event()
             return
+
+        # Check custom commands
+        async for result in self.command_handler.handle_custom_command(event):
+            yield result
+        if event.get_extra("custom_cmd_matched"):
+            event.stop_event()
+            return
+
+        # Forward message to MC server(s)
+        if await self.message_bridge.handle_external_message(event):
+            event.stop_event()
 
     async def terminate(self):
         """插件终止时的清理工作"""
         logger.info("[MC Adapter] 正在关闭...")
 
+        # 停止初始化任务
+        if self._init_task and not self._init_task.done():
+            self._init_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._init_task
+        self._init_task = None
+
         # 停止所有适配器
         for adapter in self._adapters.values():
             await adapter.stop()
         self._adapters.clear()
+
+        # 取消所有适配器任务
+        for task in self._adapter_tasks.values():
+            if not task.done():
+                task.cancel()
+        if self._adapter_tasks:
+            await asyncio.gather(*self._adapter_tasks.values(), return_exceptions=True)
+        self._adapter_tasks.clear()
 
         # 停止所有服务器连接
         await self.server_manager.stop_all()

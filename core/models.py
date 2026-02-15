@@ -78,6 +78,37 @@ class ErrorCode(int, Enum):
 
 
 @dataclass
+class BackendServerInfo:
+    """Backend server info reported via Velocity proxy"""
+
+    name: str = ""
+    platform: str = ""
+    version: str = ""
+    online_count: int = 0
+    max_players: int = 0
+    uptime: int = 0
+    uptime_formatted: str = ""
+    tps: dict = field(default_factory=dict)
+    memory: dict = field(default_factory=dict)
+    online: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "BackendServerInfo":
+        return cls(
+            name=data.get("name", ""),
+            platform=data.get("platform", ""),
+            version=data.get("version", ""),
+            online_count=data.get("onlineCount", data.get("onlinePlayers", 0)),
+            max_players=data.get("maxPlayers", 0),
+            uptime=data.get("uptime", 0),
+            uptime_formatted=data.get("uptimeFormatted", ""),
+            tps=data.get("tps", {}),
+            memory=data.get("memory", {}),
+            online=data.get("online", True),
+        )
+
+
+@dataclass
 class ServerInfo:
     """来自连接或 API 的服务器信息"""
 
@@ -90,10 +121,22 @@ class ServerInfo:
     online_count: int = 0
     uptime: int = 0
     uptime_formatted: str = ""
+    # Velocity proxy mode fields
+    backends: list[BackendServerInfo] = field(default_factory=list)
+    backend_count: int = 0
+    aggregate_online: int = 0
+    aggregate_max: int = 0
+
+    @property
+    def is_proxy(self) -> bool:
+        """Whether this server is a Velocity proxy with backends"""
+        return len(self.backends) > 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "ServerInfo":
         version = data.get("minecraftVersion", data.get("version", ""))
+        backends = [BackendServerInfo.from_dict(b) for b in data.get("backends", [])]
+        aggregate = data.get("aggregate", {})
         return cls(
             name=data.get("name", ""),
             platform=data.get("platform", ""),
@@ -104,6 +147,10 @@ class ServerInfo:
             online_count=data.get("onlineCount", data.get("onlinePlayers", 0)),
             uptime=data.get("uptime", 0),
             uptime_formatted=data.get("uptimeFormatted", ""),
+            backends=backends,
+            backend_count=data.get("backendCount", len(backends)),
+            aggregate_online=aggregate.get("totalOnlinePlayers", 0),
+            aggregate_max=aggregate.get("totalMaxPlayers", 0),
         )
 
 
@@ -118,6 +165,7 @@ class PlayerInfo:
     world: str = ""
     game_mode: str = ""
     is_op: bool = False
+    server: str = ""  # Backend server name (Velocity proxy mode)
 
     @classmethod
     def from_dict(cls, data: dict) -> "PlayerInfo":
@@ -129,6 +177,7 @@ class PlayerInfo:
             world=data.get("world", "未知"),
             game_mode=data.get("gameMode", ""),
             is_op=data.get("isOp", False),
+            server=data.get("server", ""),
         )
 
 
@@ -330,6 +379,56 @@ class ServerConfig:
 
 
 @dataclass
+class BackendServerStatus:
+    """Backend server status from Velocity proxy"""
+
+    name: str = ""
+    platform: str = ""
+    version: str = ""
+    online: bool = True
+    online_players: int = 0
+    max_players: int = 0
+    uptime: int = 0
+    uptime_formatted: str = ""
+    tps_1m: float = 0.0
+    tps_5m: float = 0.0
+    tps_15m: float = 0.0
+    memory_used: int = 0
+    memory_max: int = 0
+    memory_usage_percent: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "BackendServerStatus":
+        tps = data.get("tps", {})
+        memory = data.get("memory", {})
+        tps_1m = tps.get("tps1m", tps.get("1m", 0.0))
+        tps_5m = tps.get("tps5m", tps.get("5m", 0.0))
+        tps_15m = tps.get("tps15m", tps.get("15m", 0.0))
+        memory_used = memory.get("used", 0)
+        memory_max = memory.get("max", memory.get("total", 0))
+        if memory_max:
+            memory_usage_percent = (memory_used / memory_max) * 100
+        else:
+            memory_usage_percent = 0.0
+        return cls(
+            name=data.get("name", ""),
+            platform=data.get("platform", ""),
+            version=data.get("version", ""),
+            online=data.get("online", True),
+            online_players=data.get("onlinePlayers", 0),
+            max_players=data.get("maxPlayers", 0),
+            uptime=data.get("uptime", 0),
+            uptime_formatted=data.get("uptimeFormatted", ""),
+            tps_1m=tps_1m,
+            tps_5m=tps_5m,
+            tps_15m=tps_15m,
+            memory_used=memory_used,
+            memory_max=memory_max,
+            memory_usage_percent=memory_usage_percent,
+        )
+
+
+@dataclass
 class ServerStatus:
     """服务器状态信息"""
 
@@ -348,6 +447,13 @@ class ServerStatus:
     worlds: list[dict] = field(default_factory=list)
     plugins_total: int = 0
     plugins_enabled: int = 0
+    # Velocity proxy mode: backend server statuses
+    backends: list[BackendServerStatus] = field(default_factory=list)
+
+    @property
+    def is_proxy(self) -> bool:
+        """Whether this status contains backend server data"""
+        return len(self.backends) > 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "ServerStatus":
@@ -369,6 +475,8 @@ class ServerStatus:
         else:
             memory_usage_percent = memory.get("usagePercent", 0.0)
 
+        backends = [BackendServerStatus.from_dict(b) for b in data.get("backends", [])]
+
         return cls(
             online=True,
             tps_1m=tps_1m,
@@ -385,6 +493,7 @@ class ServerStatus:
             worlds=data.get("worlds", []),
             plugins_total=plugins.get("total", 0),
             plugins_enabled=plugins.get("enabled", 0),
+            backends=backends,
         )
 
 

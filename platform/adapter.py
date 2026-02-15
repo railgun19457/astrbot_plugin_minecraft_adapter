@@ -26,6 +26,15 @@ from ..core.server_manager import ServerConnection
 from .event import MCMessageEvent
 
 
+def _extract_text(message_chain: MessageChain) -> str:
+    """Extract plain text content from a MessageChain."""
+    return "".join(
+        component.text
+        for component in message_chain.chain
+        if isinstance(component, Plain)
+    )
+
+
 class MCPlatformAdapter(Platform):
     """用于 Minecraft 服务器的平台适配器"""
 
@@ -52,13 +61,7 @@ class MCPlatformAdapter(Platform):
         self, session: MessageSesion, message_chain: MessageChain
     ):
         """通过会话发送消息"""
-        # 提取文本内容
-        content_parts = []
-        for component in message_chain.chain:
-            if isinstance(component, Plain):
-                content_parts.append(component.text)
-
-        content = "".join(content_parts)
+        content = _extract_text(message_chain)
         if not content:
             return
 

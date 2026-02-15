@@ -121,6 +121,25 @@
             font-style: italic;
             border: 1px dashed #e5e7eb;
         }
+        .server-group-header {
+            font-size: 14px;
+            font-weight: 700;
+            color: #374151;
+            padding: 8px 0 4px 0;
+            margin-top: 8px;
+            border-bottom: 1px solid #f3f4f6;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .server-group-header .count {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -131,6 +150,43 @@
             </div>
 
         {% if players %}
+            {% if has_server_field and grouped %}
+                {% for srv_name, srv_players in grouped.items() %}
+                <div class="server-group-header">
+                    <span>🔹 {{ srv_name }}</span>
+                    <span class="count">{{ srv_players|length }}人</span>
+                </div>
+                {% for p in srv_players %}
+                <div class="player-row">
+                    <div class="avatar">
+                        <img src="https://minotar.net/avatar/{{ p.uuid }}/36.png" 
+                             alt="{{ p.name }}"
+                             onerror="this.src='https://minotar.net/avatar/MHF_Steve/36.png'">
+                    </div>
+                    <div class="info">
+                        <div class="name">{{ p.name }}</div>
+                        <div class="meta">
+                            {% if p.world and p.world != "未知" %}
+                            <span class="tag">🌍 {{ p.world }}</span>
+                            {% endif %}
+                            {% if p.game_mode %}
+                            <span class="tag">
+                                {% if p.game_mode == "SURVIVAL" %}⚔️ 生存
+                                {% elif p.game_mode == "CREATIVE" %}🎨 创造
+                                {% elif p.game_mode == "ADVENTURE" %}🗺️ 冒险
+                                {% elif p.game_mode == "SPECTATOR" %}👻 旁观
+                                {% else %}{{ p.game_mode }}{% endif %}
+                            </span>
+                            {% endif %}
+                            <span style="margin-left:auto">
+                                📶 <span class="{{ ping_class(p.ping) }}">{{ p.ping }}ms</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                {% endfor %}
+            {% else %}
             {% for p in players %}
             <div class="player-row">
                 <div class="avatar">
@@ -165,6 +221,7 @@
                 </div>
             </div>
             {% endfor %}
+            {% endif %}
         {% else %}
             <div class="empty-state">
                 当前没有玩家在线

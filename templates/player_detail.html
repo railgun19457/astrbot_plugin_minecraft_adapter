@@ -145,7 +145,8 @@
                     <span class="stat-val">{{ "%.1f"|format(player.health) }} / {{ "%.1f"|format(player.max_health) }}</span>
                 </div>
                 <div class="bar-container">
-                    <div class="bar-fill health-fill" style="width: {{ (player.health / player.max_health * 100)|round }}%"></div>
+                    {% set health_pct = ((player.health / player.max_health * 100) if player.max_health else 0)|round %}
+                    <div class="bar-fill health-fill" style="width: {{ health_pct }}%"></div>
                 </div>
 
                 <div class="stat-row">
@@ -169,7 +170,7 @@
             <div class="grid-info">
                 <div class="detail-item">
                     <span class="detail-label">所在世界</span>
-                    <span class="detail-content">{{ player.world }}</span>
+                    <span class="detail-content">{{ player.world or "未知" }}</span>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">游戏模式</span>
@@ -178,20 +179,23 @@
                         {% elif player.game_mode == "CREATIVE" %}创造
                         {% elif player.game_mode == "ADVENTURE" %}冒险
                         {% elif player.game_mode == "SPECTATOR" %}旁观
-                        {% else %}{{ player.game_mode }}{% endif %}
+                        {% elif player.game_mode %}{{ player.game_mode }}
+                        {% else %}未知{% endif %}
                     </span>
                 </div>
+                {% if player.location %}
                 <div class="detail-item" style="grid-column: span 2">
                     <span class="detail-label">坐标位置</span>
                     <span class="detail-content">
-                        X: {{ "%.0f"|format(player.location.x) }}
-                        Y: {{ "%.0f"|format(player.location.y) }}
-                        Z: {{ "%.0f"|format(player.location.z) }}
+                        X: {{ "%.0f"|format(player.location.get("x", 0)) }}
+                        Y: {{ "%.0f"|format(player.location.get("y", 0)) }}
+                        Z: {{ "%.0f"|format(player.location.get("z", 0)) }}
                     </span>
                 </div>
+                {% endif %}
                 <div class="detail-item">
                     <span class="detail-label">在线时长</span>
-                    <span class="detail-content">{{ player.online_time_formatted|default("未知") }}</span>
+                    <span class="detail-content">{{ player.online_time_formatted or "未知" }}</span>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">网络延迟</span>

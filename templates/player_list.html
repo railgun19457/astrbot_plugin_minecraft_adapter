@@ -159,7 +159,7 @@
                 {% for p in srv_players %}
                 <div class="player-row">
                     <div class="avatar">
-                        <img src="https://minotar.net/avatar/{{ p.uuid }}/36.png" 
+                        <img src="https://minotar.net/avatar/{{ p.name or p.uuid }}/36.png" 
                              alt="{{ p.name }}"
                              onerror="this.src='https://minotar.net/avatar/MHF_Steve/36.png'">
                     </div>
@@ -190,7 +190,7 @@
             {% for p in players %}
             <div class="player-row">
                 <div class="avatar">
-                    <img src="https://minotar.net/avatar/{{ p.uuid }}/36.png" 
+                    <img src="https://minotar.net/avatar/{{ p.name or p.uuid }}/36.png" 
                          alt="{{ p.name }}"
                          onerror="this.src='https://minotar.net/avatar/MHF_Steve/36.png'">
                 </div>

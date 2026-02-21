@@ -67,6 +67,21 @@ class InfoRenderer:
             self._html_renderer = HtmlRenderer()
             await self._html_renderer.initialize()
 
+    @staticmethod
+    def _is_supported_image_bytes(data: bytes) -> bool:
+        """Check whether bytes look like a supported image payload."""
+        if not data:
+            return False
+        if data.startswith(b"\xff\xd8\xff"):  # JPEG
+            return True
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):  # PNG
+            return True
+        if data.startswith((b"GIF87a", b"GIF89a")):  # GIF
+            return True
+        if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+            return True
+        return False
+
     # 命令处理器调用的主入口方法
 
     async def _render_as_image(self, html_content: str) -> RenderResult | None:
@@ -84,7 +99,17 @@ class InfoRenderer:
                 tmpl_str=html_content, tmpl_data={}, return_url=False, options=options
             )
             with open(image_path, "rb") as f:
-                return RenderResult(BytesIO(f.read()), is_image=True)
+                image_bytes = f.read()
+
+            if not self._is_supported_image_bytes(image_bytes):
+                preview = image_bytes[:80].decode("utf-8", errors="ignore").strip()
+                logger.warning(
+                    "[Renderer] t2i endpoint returned non-image payload, "
+                    f"fallback to text. preview={preview!r}"
+                )
+                return None
+
+            return RenderResult(BytesIO(image_bytes), is_image=True)
         except Exception as e:
             logger.warning(f"[Renderer] 渲染图片失败，回退到文本模式: {e}")
             return None

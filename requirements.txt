@@ -1,1 +1,2 @@
 aiohttp>=3.9.0
+Pillow>=10.0.0

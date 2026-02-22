@@ -3,6 +3,7 @@
 import re
 import time
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from astrbot.api import logger
@@ -313,7 +314,9 @@ class CommandHandler:
     /mc bind <游戏ID> - 绑定你的游戏ID
     /mc unbind - 解除绑定
 
-多服务器: 关联多个服务器时，会显示服务器列表，发送编号选择目标"""
+多服务器:
+    status/list/player 会自动输出所有关联服务器结果
+    cmd 在多目标下仍需编号选择"""
 
         # 收集自定义指令列表
         custom_cmds = self._get_custom_command_triggers()
@@ -327,36 +330,112 @@ class CommandHandler:
 
     async def handle_status(self, event: AstrMessageEvent):
         """显示服务器状态"""
-        server, msg = self._resolve_server_or_pending(
-            event.unified_msg_origin, action="status"
-        )
-        if server is None:
-            if msg:
-                yield event.plain_result(msg)
+        all_servers = self._get_session_all_servers(event.unified_msg_origin)
+        if not all_servers:
+            yield event.plain_result(
+                "❌ 当前会话未关联任何服务器，请在插件配置中将此会话添加到服务器的目标会话列表"
+            )
             return
 
-        async for result in self._do_status(event, server):
-            yield result
+        online_servers = [s for s in all_servers if s.connected]
+        if not online_servers:
+            yield event.plain_result("❌ 当前会话关联的服务器均离线")
+            return
 
-    async def _do_status(self, event: AstrMessageEvent, server):
-        """Execute status query on a resolved server"""
+        cards: list[tuple[str, object, object]] = []
+        errors: list[str] = []
+        for server in online_servers:
+            server_cards, err = await self._collect_status_cards(server)
+            if err:
+                errors.append(err)
+                continue
+            cards.extend(server_cards)
+
+        if not cards:
+            if errors:
+                yield event.plain_result("\n".join(errors))
+            else:
+                yield event.plain_result("❌ 未获取到可用状态数据")
+            return
+
+        use_image = any(
+            (
+                self.get_server_config(s.server_id).text2image
+                if self.get_server_config(s.server_id)
+                else True
+            )
+            for s in online_servers
+        )
+        result = await self.renderer.render_multi_server_status(
+            cards, as_image=use_image
+        )
+        if result.is_image:
+            yield event.chain_result([Image.fromBytes(result.image.getvalue())])
+        else:
+            yield event.plain_result(result.text)
+
+    async def _collect_status_cards(
+        self, server
+    ) -> tuple[list[tuple[str, object, object]], str]:
+        """为单个服务器收集可合并渲染的状态卡片。"""
+        server_label = (
+            server.server_info.name
+            if server.server_info and server.server_info.name
+            else server.server_id
+        )
         info, err = await server.rest_client.get_server_info()
         if not info:
-            yield event.plain_result(f"❌ 获取服务器信息失败: {err}")
-            return
+            return [], f"❌ [{server_label}] 获取服务器信息失败: {err}"
 
         status, err = await server.rest_client.get_server_status()
         if not status:
-            yield event.plain_result(f"❌ 获取服务器状态失败: {err}")
-            return
+            return [], f"❌ [{server_label}] 获取服务器状态失败: {err}"
 
+        cards: list[tuple[str, object, object]] = [(server_label, info, status)]
+        if status.is_proxy and status.backends:
+            for backend in status.backends:
+                backend_info = SimpleNamespace(
+                    name=backend.name,
+                    platform=backend.platform,
+                    minecraft_version=backend.version,
+                    online_count=backend.online_players,
+                    max_players=backend.max_players,
+                    uptime_formatted=backend.uptime_formatted,
+                    is_proxy=False,
+                    aggregate_online=0,
+                    aggregate_max=0,
+                )
+                backend_status = SimpleNamespace(
+                    is_proxy=False,
+                    online_players=backend.online_players,
+                    max_players=backend.max_players,
+                    uptime_formatted=backend.uptime_formatted,
+                    tps_1m=backend.tps_1m,
+                    tps_5m=backend.tps_5m,
+                    tps_15m=backend.tps_15m,
+                    memory_used=backend.memory_used,
+                    memory_max=backend.memory_max,
+                    memory_usage_percent=backend.memory_usage_percent,
+                    worlds=[],
+                    backends=[],
+                )
+                cards.append(
+                    (f"{server_label}/{backend.name}", backend_info, backend_status)
+                )
+
+        return cards, ""
+
+    async def _do_status(self, event: AstrMessageEvent, server):
+        """Execute status query on a resolved server"""
+        cards, err = await self._collect_status_cards(server)
+        if err:
+            yield event.plain_result(err)
+            return
         config = self.get_server_config(server.server_id)
         use_image = config.text2image if config else True
-
-        result = await self.renderer.render_server_status(
-            info, status, as_image=use_image
+        result = await self.renderer.render_multi_server_status(
+            cards, as_image=use_image
         )
-
         if result.is_image:
             yield event.chain_result([Image.fromBytes(result.image.getvalue())])
         else:
@@ -364,37 +443,59 @@ class CommandHandler:
 
     async def handle_list(self, event: AstrMessageEvent):
         """显示在线玩家列表"""
-        server, msg = self._resolve_server_or_pending(
-            event.unified_msg_origin, action="list"
-        )
-        if server is None:
-            if msg:
-                yield event.plain_result(msg)
+        all_servers = self._get_session_all_servers(event.unified_msg_origin)
+        if not all_servers:
+            yield event.plain_result(
+                "❌ 当前会话未关联任何服务器，请在插件配置中将此会话添加到服务器的目标会话列表"
+            )
             return
 
-        async for result in self._do_list(event, server):
-            yield result
+        online_servers = [s for s in all_servers if s.connected]
+        if not online_servers:
+            yield event.plain_result("❌ 当前会话关联的服务器均离线")
+            return
+
+        cards: list[tuple[str, list, int, str]] = []
+        errors: list[str] = []
+        for server in online_servers:
+            server_cards, err = await self._collect_list_cards(server)
+            if err:
+                errors.append(err)
+                continue
+            cards.extend(server_cards)
+
+        if not cards:
+            if errors:
+                yield event.plain_result("\n".join(errors))
+            else:
+                yield event.plain_result("❌ 未获取到可用玩家列表")
+            return
+
+        use_image = any(
+            (
+                self.get_server_config(s.server_id).text2image
+                if self.get_server_config(s.server_id)
+                else True
+            )
+            for s in online_servers
+        )
+        result = await self.renderer.render_multi_player_list(cards, as_image=use_image)
+        if result.is_image:
+            yield event.chain_result([Image.fromBytes(result.image.getvalue())])
+        else:
+            yield event.plain_result(result.text)
 
     async def _do_list(self, event: AstrMessageEvent, server):
         """Execute player list query on a resolved server"""
-        players, total, err = await server.rest_client.get_players()
+        cards, err = await self._collect_list_cards(server)
         if err:
-            yield event.plain_result(f"❌ 获取玩家列表失败: {err}")
+            yield event.plain_result(err)
             return
-
-        if total == 0 and players:
-            total = len(players)
-
-        server_name = ""
-        if server.server_info:
-            server_name = server.server_info.name
 
         config = self.get_server_config(server.server_id)
         use_image = config.text2image if config else True
 
-        result = await self.renderer.render_player_list(
-            players, total, server_name, as_image=use_image
-        )
+        result = await self.renderer.render_multi_player_list(cards, as_image=use_image)
 
         if result.is_image:
             yield event.chain_result([Image.fromBytes(result.image.getvalue())])
@@ -407,30 +508,63 @@ class CommandHandler:
             yield event.plain_result("❌ 请指定玩家ID")
             return
 
-        server, msg = self._resolve_server_or_pending(
-            event.unified_msg_origin,
-            action="player",
-            args={"player_id": player_id},
-        )
-        if server is None:
-            if msg:
-                yield event.plain_result(msg)
+        all_servers = self._get_session_all_servers(event.unified_msg_origin)
+        if not all_servers:
+            yield event.plain_result(
+                "❌ 当前会话未关联任何服务器，请在插件配置中将此会话添加到服务器的目标会话列表"
+            )
             return
 
-        async for result in self._do_player(event, server, player_id):
-            yield result
+        online_servers = [s for s in all_servers if s.connected]
+        if not online_servers:
+            yield event.plain_result("❌ 当前会话关联的服务器均离线")
+            return
+
+        cards: list[tuple[str, object]] = []
+        for server in online_servers:
+            player, _ = await server.rest_client.get_player_by_name(player_id)
+            if not player:
+                continue
+            player_server_name = await self._resolve_player_card_server_name(
+                server, player
+            )
+            cards.append((player_server_name, player))
+
+        if cards:
+            use_image = any(
+                (
+                    self.get_server_config(s.server_id).text2image
+                    if self.get_server_config(s.server_id)
+                    else True
+                )
+                for s in online_servers
+            )
+            result = await self.renderer.render_multi_player_detail(
+                cards, as_image=use_image
+            )
+            if result.is_image:
+                yield event.chain_result([Image.fromBytes(result.image.getvalue())])
+            else:
+                yield event.plain_result(result.text)
+            return
+
+        yield event.plain_result("❌ 玩家在所有在线服务器中均无数据")
 
     async def _do_player(self, event: AstrMessageEvent, server, player_id: str):
         """Execute player detail query on a resolved server"""
+        server_label = self._server_label(server)
         player, err = await server.rest_client.get_player_by_name(player_id)
         if not player:
-            yield event.plain_result(f"❌ 获取玩家信息失败: {err}")
+            yield event.plain_result(f"❌ [{server_label}] 获取玩家信息失败: {err}")
             return
 
         config = self.get_server_config(server.server_id)
         use_image = config.text2image if config else True
+        player_server_name = await self._resolve_player_card_server_name(server, player)
 
-        result = await self.renderer.render_player_detail(player, as_image=use_image)
+        result = await self.renderer.render_player_detail(
+            player, server_tag=player_server_name, as_image=use_image
+        )
 
         if result.is_image:
             yield event.chain_result([Image.fromBytes(result.image.getvalue())])
@@ -662,6 +796,124 @@ class CommandHandler:
             if config and config.target_sessions and umo in config.target_sessions:
                 servers.append(server)
         return servers
+
+    def _get_session_all_servers(self, umo: str) -> list:
+        """获取会话关联的全部服务器（含离线）。"""
+        if not umo:
+            return []
+        servers = []
+        for server in self.server_manager.get_all_servers().values():
+            config = self.get_server_config(server.server_id)
+            if config and config.target_sessions and umo in config.target_sessions:
+                servers.append(server)
+        return servers
+
+    @staticmethod
+    def _server_label(server) -> str:
+        return (
+            server.server_info.name
+            if server.server_info and server.server_info.name
+            else server.server_id
+        )
+
+    @staticmethod
+    def _is_proxy_like_name(name: str) -> bool:
+        n = (name or "").strip().lower()
+        if not n:
+            return False
+        if n in {"vc", "velocity", "proxy", "bungeecord", "waterfall"}:
+            return True
+        return any(k in n for k in ("velocity", "proxy", "bungee", "waterfall", "vc"))
+
+    async def _collect_list_cards(
+        self, server
+    ) -> tuple[list[tuple[str, list, int, str]], str]:
+        """将代理服后端映射为独立服务器卡片，和普通独立服同层级返回。"""
+        server_label = self._server_label(server)
+        players, total, err = await server.rest_client.get_players()
+        if err:
+            return [], f"❌ [{server_label}] 获取玩家列表失败: {err}"
+        if total == 0 and players:
+            total = len(players)
+
+        status, _ = await server.rest_client.get_server_status()
+        if not status or not status.is_proxy or not status.backends:
+            return [(server_label, players, total, server_label)], ""
+
+        grouped: dict[str, list] = {}
+        unknown_players: list = []
+        for p in players:
+            backend = (getattr(p, "server", "") or "").strip()
+            if backend:
+                grouped.setdefault(backend, []).append(p)
+            else:
+                unknown_players.append(p)
+
+        cards: list[tuple[str, list, int, str]] = []
+        backend_name_set: set[str] = set()
+        for backend in status.backends:
+            backend_name = (backend.name or "").strip() or "未命名后端"
+            backend_name_set.add(backend_name)
+            backend_players = grouped.pop(backend_name, [])
+            backend_total = (
+                backend.online_players
+                if backend.online_players > 0
+                else len(backend_players)
+            )
+            cards.append((backend_name, backend_players, backend_total, backend_name))
+
+        # 兜底：处理状态未上报但玩家数据里出现的后端名
+        for extra_backend, extra_players in grouped.items():
+            cards.append(
+                (extra_backend, extra_players, len(extra_players), extra_backend)
+            )
+
+        if unknown_players:
+            cards.append(
+                ("未标记子服", unknown_players, len(unknown_players), "未标记子服")
+            )
+
+        return cards, ""
+
+    async def _resolve_player_card_server_name(self, server, player) -> str:
+        """解析玩家详情卡片展示服务器名：优先后端服，独立服回退主服名。"""
+        server_label = self._server_label(server)
+
+        status, _ = await server.rest_client.get_server_status()
+        if not status or not status.is_proxy or not status.backends:
+            return server_label
+
+        backend_map = {
+            (b.name or "").strip().lower(): (b.name or "").strip()
+            for b in status.backends
+            if (b.name or "").strip()
+        }
+
+        candidate = (getattr(player, "server", "") or "").strip()
+        if candidate and candidate.lower() in backend_map:
+            return backend_map[candidate.lower()]
+
+        # 代理服场景下，玩家详情可能缺少server，回查players接口补齐
+        players, _, _ = await server.rest_client.get_players()
+        target_uuid = (getattr(player, "uuid", "") or "").strip().lower()
+        target_name = (getattr(player, "name", "") or "").strip().lower()
+        for p in players:
+            puid = (getattr(p, "uuid", "") or "").strip().lower()
+            pname = (getattr(p, "name", "") or "").strip().lower()
+            if (target_uuid and puid == target_uuid) or (
+                target_name and pname == target_name
+            ):
+                pserver = (getattr(p, "server", "") or "").strip()
+                if pserver and pserver.lower() in backend_map:
+                    return backend_map[pserver.lower()]
+                if pserver and not self._is_proxy_like_name(pserver):
+                    return pserver
+                break
+
+        # 不回退代理层名称，保持为空，交给渲染层显示“未提供”
+        if candidate and not self._is_proxy_like_name(candidate):
+            return candidate
+        return ""
 
     def _format_server_choices(self, servers: list) -> str:
         lines = []

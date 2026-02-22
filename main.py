@@ -44,6 +44,7 @@ class MinecraftAdapterPlugin(Star):
             / "astrbot_plugin_minecraft_adapter"
         )
         plugin_data_path.mkdir(parents=True, exist_ok=True)
+        self._plugin_data_path = plugin_data_path
 
         # 初始化服务
         self.server_manager = ServerManager()
@@ -126,7 +127,10 @@ class MinecraftAdapterPlugin(Star):
         # 初始化渲染器
         # 检查是否有任何服务器启用了 text2image
         any_text2image = any(c.text2image for c in self._server_configs.values())
-        renderer = InfoRenderer(text2image_enabled=any_text2image)
+        renderer = InfoRenderer(
+            text2image_enabled=any_text2image,
+            cache_dir=self._plugin_data_path / "renderer_cache",
+        )
 
         # 初始化命令处理器
         self.command_handler = CommandHandler(

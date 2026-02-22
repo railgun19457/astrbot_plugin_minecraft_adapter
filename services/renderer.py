@@ -132,16 +132,22 @@ class InfoRenderer:
 
     def _get_status_color(self, value: float, type: str = "tps") -> str:
         if type == "tps":
-            if value >= 19: return self._COLOR_SUCCESS
-            if value >= 15: return self._COLOR_WARNING
+            if value >= 19:
+                return self._COLOR_SUCCESS
+            if value >= 15:
+                return self._COLOR_WARNING
             return self._COLOR_DANGER
         if type == "ping":
-            if value < 100: return self._COLOR_SUCCESS
-            if value < 200: return self._COLOR_WARNING
+            if value < 100:
+                return self._COLOR_SUCCESS
+            if value < 200:
+                return self._COLOR_WARNING
             return self._COLOR_DANGER
         if type == "memory":
-            if value < 70: return self._COLOR_SUCCESS
-            if value < 90: return self._COLOR_WARNING
+            if value < 70:
+                return self._COLOR_SUCCESS
+            if value < 90:
+                return self._COLOR_WARNING
             return self._COLOR_DANGER
         return self._COLOR_TEXT_MAIN
 
@@ -160,7 +166,9 @@ class InfoRenderer:
         if fill_w > 0:
             draw.rounded_rectangle((x, y, x + fill_w, y + h), radius=5, fill=color)
 
-    def _draw_header(self, draw: ImageDraw.ImageDraw, y: int, title: str, sub_title: str):
+    def _draw_header(
+        self, draw: ImageDraw.ImageDraw, y: int, title: str, sub_title: str
+    ):
         draw.rounded_rectangle(
             (22, y, self._CARD_W - 22, y + 126), radius=16, fill=self._COLOR_BG_BADGE
         )
@@ -179,7 +187,15 @@ class InfoRenderer:
         )
         return y + 144
 
-    def _draw_section_box(self, draw: ImageDraw.ImageDraw, y: int, title: str, bg_color: str, text_color: str, height: int):
+    def _draw_section_box(
+        self,
+        draw: ImageDraw.ImageDraw,
+        y: int,
+        title: str,
+        bg_color: str,
+        text_color: str,
+        height: int,
+    ):
         draw.rounded_rectangle(
             (28, y, self._CARD_W - 28, y + height),
             radius=12,
@@ -191,9 +207,7 @@ class InfoRenderer:
             radius=12,
             fill=bg_color,
         )
-        draw.rectangle(
-            (28, y + 30, self._CARD_W - 28, y + 44), fill=bg_color
-        )
+        draw.rectangle((28, y + 30, self._CARD_W - 28, y + 44), fill=bg_color)
         draw.text((44, y + 10), title, font=self._font(24), fill=text_color)
 
     def _placeholder_avatar_face(self) -> Image.Image:
@@ -229,7 +243,9 @@ class InfoRenderer:
             return True
         return any(k in n for k in ("velocity", "proxy", "bungee", "waterfall", "vc"))
 
-    def _get_effective_server_name(self, player: "PlayerInfo | PlayerDetail", fallback: str) -> str:
+    def _get_effective_server_name(
+        self, player: "PlayerInfo | PlayerDetail", fallback: str
+    ) -> str:
         """优先使用玩家后端服名；独立服场景回退到fallback；不再使用world兜底。"""
         fallback_norm = self._norm(fallback)
         server = self._norm(getattr(player, "server", ""))
@@ -406,46 +422,89 @@ class InfoRenderer:
         small_font = self._font(20)
 
         y = self._draw_header(
-            draw, 24, 
-            f"服务器状态  {server_info.name}", 
-            f"{server_info.platform}  {server_info.minecraft_version}"
+            draw,
+            24,
+            f"服务器状态  {server_info.name}",
+            f"{server_info.platform}  {server_info.minecraft_version}",
         )
 
         panel_h = 106
         gap = 14
         panel_w = (self._CARD_W - 84 - gap * 2) // 3
-        
+
         # Stats Panels
         stats = [
             ("在线玩家", f"{online_count}/{max_players}", None),
             ("运行时间", uptime, None),
-            ("内存使用", f"{server_status.memory_used}MB / {server_status.memory_max}MB", "memory"),
+            (
+                "内存使用",
+                f"{server_status.memory_used}MB / {server_status.memory_max}MB",
+                "memory",
+            ),
         ]
-        
+
         x = 42
         for title, val, stype in stats:
-            draw.rounded_rectangle((x, y, x + panel_w, y + panel_h), radius=12, fill=self._COLOR_BG_LIGHT)
-            draw.text((x + 18, y + 16), title, font=small_font, fill=self._COLOR_TEXT_SUB)
-            draw.text((x + 18, y + 50), val, font=self._font(30) if stype != "memory" else body_font, fill=self._COLOR_TEXT_MAIN)
+            draw.rounded_rectangle(
+                (x, y, x + panel_w, y + panel_h), radius=12, fill=self._COLOR_BG_LIGHT
+            )
+            draw.text(
+                (x + 18, y + 16), title, font=small_font, fill=self._COLOR_TEXT_SUB
+            )
+            draw.text(
+                (x + 18, y + 50),
+                val,
+                font=self._font(30) if stype != "memory" else body_font,
+                fill=self._COLOR_TEXT_MAIN,
+            )
             if stype == "memory":
                 mem = self._safe_percent(server_status.memory_usage_percent)
-                self._draw_progress(draw, x + 18, y + 80, panel_w - 36, 12, mem, self._get_status_color(mem, "memory"))
+                self._draw_progress(
+                    draw,
+                    x + 18,
+                    y + 80,
+                    panel_w - 36,
+                    12,
+                    mem,
+                    self._get_status_color(mem, "memory"),
+                )
             x += panel_w + gap
-        
+
         y += panel_h + 18
 
         if server_info.is_proxy and server_info.aggregate_online > 0:
-            draw.rounded_rectangle((42, y, self._CARD_W - 42, y + 48), radius=10, fill="#eff6ff")
-            draw.text((58, y + 12), f"总在线: {server_info.aggregate_online}/{server_info.aggregate_max}", font=body_font, fill="#1d4ed8")
+            draw.rounded_rectangle(
+                (42, y, self._CARD_W - 42, y + 48), radius=10, fill="#eff6ff"
+            )
+            draw.text(
+                (58, y + 12),
+                f"总在线: {server_info.aggregate_online}/{server_info.aggregate_max}",
+                font=body_font,
+                fill="#1d4ed8",
+            )
             y += 60
 
         if not server_status.is_proxy:
-            draw.rounded_rectangle((42, y, self._CARD_W - 42, y + 84), radius=12, fill=self._COLOR_BG_LIGHT)
-            draw.text((58, y + 14), "TPS (1m / 5m / 15m)", font=small_font, fill=self._COLOR_TEXT_SUB)
+            draw.rounded_rectangle(
+                (42, y, self._CARD_W - 42, y + 84), radius=12, fill=self._COLOR_BG_LIGHT
+            )
+            draw.text(
+                (58, y + 14),
+                "TPS (1m / 5m / 15m)",
+                font=small_font,
+                fill=self._COLOR_TEXT_SUB,
+            )
             tx = 58
-            for idx, value in enumerate((server_status.tps_1m, server_status.tps_5m, server_status.tps_15m)):
+            for idx, value in enumerate(
+                (server_status.tps_1m, server_status.tps_5m, server_status.tps_15m)
+            ):
                 t = f"{value:.1f}"
-                draw.text((tx, y + 44), t, font=body_font, fill=self._get_status_color(value, "tps"))
+                draw.text(
+                    (tx, y + 44),
+                    t,
+                    font=body_font,
+                    fill=self._get_status_color(value, "tps"),
+                )
                 tx += int(draw.textlength(t, font=body_font)) + 14
                 if idx < 2:
                     draw.text((tx, y + 44), "|", font=body_font, fill="#9ca3af")
@@ -453,14 +512,28 @@ class InfoRenderer:
             y += 96
 
         if server_status.worlds:
-            draw.text((42, y), "世界列表", font=self._font(30), fill=self._COLOR_TEXT_MAIN)
+            draw.text(
+                (42, y), "世界列表", font=self._font(30), fill=self._COLOR_TEXT_MAIN
+            )
             y += 46
             for world in server_status.worlds:
-                draw.rounded_rectangle((42, y, self._CARD_W - 42, y + 50), radius=10, fill="#f9fafb")
-                draw.text((58, y + 11), str(world.get("name", "world")), font=body_font, fill="#374151")
+                draw.rounded_rectangle(
+                    (42, y, self._CARD_W - 42, y + 50), radius=10, fill="#f9fafb"
+                )
+                draw.text(
+                    (58, y + 11),
+                    str(world.get("name", "world")),
+                    font=body_font,
+                    fill="#374151",
+                )
                 metric = f"玩家 {world.get('players', 0)}   实体 {world.get('entities', 0)}   区块 {world.get('loadedChunks', 0)}"
                 tw = int(draw.textlength(metric, font=small_font))
-                draw.text((self._CARD_W - 58 - tw, y + 14), metric, font=small_font, fill=self._COLOR_TEXT_SUB)
+                draw.text(
+                    (self._CARD_W - 58 - tw, y + 14),
+                    metric,
+                    font=small_font,
+                    fill=self._COLOR_TEXT_SUB,
+                )
                 y += 60
 
         card = image.crop((0, 0, self._CARD_W, min(max(y + 28, 280), image.height)))
@@ -529,41 +602,72 @@ class InfoRenderer:
         small_font = self._font(20)
 
         y = self._draw_header(
-            draw, 24, 
-            f"在线玩家总览 ({total_players})", 
-            "实时在线玩家列表"
+            draw, 24, f"在线玩家总览 ({total_players})", "实时在线玩家列表"
         )
 
         if not flattened:
-            draw.rounded_rectangle((34, y, self._CARD_W - 34, y + 84), radius=12, fill="#f9fafb")
-            draw.text((self._CARD_W // 2 - 110, y + 30), "当前没有玩家在线", font=body_font, fill="#9ca3af")
+            draw.rounded_rectangle(
+                (34, y, self._CARD_W - 34, y + 84), radius=12, fill="#f9fafb"
+            )
+            draw.text(
+                (self._CARD_W // 2 - 110, y + 30),
+                "当前没有玩家在线",
+                font=body_font,
+                fill="#9ca3af",
+            )
             y += 96
         else:
             for server_id, players, total, server_name in flattened:
                 server_count = total if total > 0 else len(players)
-                draw.rounded_rectangle((34, y, self._CARD_W - 34, y + 40), radius=9, fill="#dbeafe")
+                draw.rounded_rectangle(
+                    (34, y, self._CARD_W - 34, y + 40), radius=9, fill="#dbeafe"
+                )
                 server_title = server_name or server_id
-                draw.text((46, y + 10), f"服务器: {server_title}   ({server_count}人)", font=small_font, fill="#1d4ed8")
+                draw.text(
+                    (46, y + 10),
+                    f"服务器: {server_title}   ({server_count}人)",
+                    font=small_font,
+                    fill="#1d4ed8",
+                )
                 y += 48
 
                 for row_idx, p in enumerate(players):
                     row_bg = self._CARD_BG if row_idx % 2 == 0 else self._COLOR_BG_LIGHT
                     ping_color = self._get_status_color(p.ping, "ping")
-                    draw.rounded_rectangle((42, y, self._CARD_W - 42, y + 68), radius=10, fill=row_bg, outline="#f3f4f6")
-                    draw.rounded_rectangle((46, y + 8, 52, y + 60), radius=3, fill=ping_color)
-                    
+                    draw.rounded_rectangle(
+                        (42, y, self._CARD_W - 42, y + 68),
+                        radius=10,
+                        fill=row_bg,
+                        outline="#f3f4f6",
+                    )
+                    draw.rounded_rectangle(
+                        (46, y + 8, 52, y + 60), radius=3, fill=ping_color
+                    )
+
                     avatar = await self._get_avatar(p.name, p.uuid, size=50)
                     avatar = self._rounded_avatar(avatar, radius=10)
                     image.paste(avatar, (54, y + 9), avatar)
-                    
-                    draw.text((118, y + 11), p.name, font=body_font, fill=self._COLOR_TEXT_MAIN)
+
+                    draw.text(
+                        (118, y + 11),
+                        p.name,
+                        font=body_font,
+                        fill=self._COLOR_TEXT_MAIN,
+                    )
                     mode = self._mode_cn(p.game_mode)
                     line = f"模式 {mode}   世界 {p.world or '未知'}"
-                    draw.text((118, y + 38), line, font=small_font, fill=self._COLOR_TEXT_SUB)
+                    draw.text(
+                        (118, y + 38), line, font=small_font, fill=self._COLOR_TEXT_SUB
+                    )
 
                     pt = f"{p.ping}ms"
                     tw = int(draw.textlength(pt, font=small_font))
-                    draw.text((self._CARD_W - 56 - tw, y + 23), pt, font=small_font, fill=ping_color)
+                    draw.text(
+                        (self._CARD_W - 56 - tw, y + 23),
+                        pt,
+                        font=small_font,
+                        fill=ping_color,
+                    )
                     y += 76
                 y += 8
 
@@ -592,34 +696,92 @@ class InfoRenderer:
                 radius=10,
                 fill="#dbeafe",
             )
-            draw.text((self._CARD_W - bw - 14, y + 14), badge, font=small_font, fill="#1d4ed8")
+            draw.text(
+                (self._CARD_W - bw - 14, y + 14), badge, font=small_font, fill="#1d4ed8"
+            )
 
         avatar = await self._get_avatar(player.name, player.uuid, size=92)
         avatar = self._rounded_avatar(avatar, radius=14)
         image.paste(avatar, (34, y), avatar)
 
-        draw.text((142, y + 4), player.name, font=self._font(42), fill=self._COLOR_TEXT_MAIN)
-        draw.text((142, y + 58), player.uuid, font=small_font, fill=self._COLOR_TEXT_SUB)
+        draw.text(
+            (142, y + 4), player.name, font=self._font(42), fill=self._COLOR_TEXT_MAIN
+        )
+        draw.text(
+            (142, y + 58), player.uuid, font=small_font, fill=self._COLOR_TEXT_SUB
+        )
         if player.is_op:
-            draw.rounded_rectangle((430, y + 10, 560, y + 46), radius=8, fill="#fef3c7", outline="#fcd34d")
+            draw.rounded_rectangle(
+                (430, y + 10, 560, y + 46), radius=8, fill="#fef3c7", outline="#fcd34d"
+            )
             draw.text((454, y + 18), "管理员", font=small_font, fill="#b45309")
         y += 136
 
         # --- Sections ---
         sections = [
-            ("▶ 基础信息", "#ecfeff", "#155e75", 110, [
-                ((44, 0), f"世界: {player.world or '未知'}", self._COLOR_TEXT_MAIN),
-                ((370, 0), f"模式: {self._mode_cn(player.game_mode)}", self._COLOR_TEXT_MAIN),
-                ((700, 0), f"延迟: {player.ping}ms", self._get_status_color(player.ping, "ping")),
-            ]),
-            ("▶ 状态面板", "#eef2ff", "#3730a3", 220, [
-                ("progress", 44, f"生命值 {player.health:.1f}/{player.max_health:.1f}", (player.health / player.max_health * 100) if player.max_health else 0, "#ef4444"),
-                ("progress", 94, f"饥饿值 {player.food_level}/20", player.food_level * 5, "#f59e0b"),
-                ("progress", 144, f"等级 {player.level} ({player.exp * 100:.1f}%)", player.exp * 100, "#10b981"),
-            ]),
-            ("▶ 在线信息", "#f0fdf4", "#166534", 158 if player.location else 110, [
-                ((44, 0), f"在线时长: {player.online_time_formatted or '未知'}", self._COLOR_TEXT_MAIN),
-            ])
+            (
+                "▶ 基础信息",
+                "#ecfeff",
+                "#155e75",
+                110,
+                [
+                    ((44, 0), f"世界: {player.world or '未知'}", self._COLOR_TEXT_MAIN),
+                    (
+                        (370, 0),
+                        f"模式: {self._mode_cn(player.game_mode)}",
+                        self._COLOR_TEXT_MAIN,
+                    ),
+                    (
+                        (700, 0),
+                        f"延迟: {player.ping}ms",
+                        self._get_status_color(player.ping, "ping"),
+                    ),
+                ],
+            ),
+            (
+                "▶ 状态面板",
+                "#eef2ff",
+                "#3730a3",
+                220,
+                [
+                    (
+                        "progress",
+                        44,
+                        f"生命值 {player.health:.1f}/{player.max_health:.1f}",
+                        (player.health / player.max_health * 100)
+                        if player.max_health
+                        else 0,
+                        "#ef4444",
+                    ),
+                    (
+                        "progress",
+                        94,
+                        f"饥饿值 {player.food_level}/20",
+                        player.food_level * 5,
+                        "#f59e0b",
+                    ),
+                    (
+                        "progress",
+                        144,
+                        f"等级 {player.level} ({player.exp * 100:.1f}%)",
+                        player.exp * 100,
+                        "#10b981",
+                    ),
+                ],
+            ),
+            (
+                "▶ 在线信息",
+                "#f0fdf4",
+                "#166534",
+                158 if player.location else 110,
+                [
+                    (
+                        (44, 0),
+                        f"在线时长: {player.online_time_formatted or '未知'}",
+                        self._COLOR_TEXT_MAIN,
+                    ),
+                ],
+            ),
         ]
 
         if player.location:
@@ -632,7 +794,15 @@ class InfoRenderer:
                 if item[0] == "progress":
                     _, py, label, pct, color = item
                     draw.text((44, y + py + 20), label, font=body_font, fill="#374151")
-                    self._draw_progress(draw, 44, y + py + 54, self._CARD_W - 88, 12, self._safe_percent(pct), color)
+                    self._draw_progress(
+                        draw,
+                        44,
+                        y + py + 54,
+                        self._CARD_W - 88,
+                        12,
+                        self._safe_percent(pct),
+                        color,
+                    )
                 else:
                     (ix, iy), text, color = item
                     draw.text((ix, y + iy + 64), text, font=body_font, fill=color)
